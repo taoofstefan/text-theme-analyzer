@@ -367,7 +367,12 @@ def _parse_with_retry(
                 user=user,
                 temperature=temperature,
                 json_mode=True,
-                max_tokens=4096,
+                # Output budget for the JSON response. The model produces
+                # ~12-25KB of JSON for a real-sized corpus (11+ clusters,
+                # 8+ tensions, 8+ article candidates with verbose prose).
+                # 12288 covers that; if you see "Unterminated string" or
+                # "Expecting value" parse errors, raise this.
+                max_tokens=12288,
             )
         except Exception as e:
             last_error = e

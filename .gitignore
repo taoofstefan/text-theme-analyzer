@@ -41,6 +41,9 @@ reports/
 text-theme-analyzer-sample-*/
 text-theme-analyzer-sample-*/
 
+# The full Obsidian vault used for real-corpus runs
+data/
+
 # OS
 .DS_Store
 Thumbs.db

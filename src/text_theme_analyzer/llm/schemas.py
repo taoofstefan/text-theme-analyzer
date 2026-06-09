@@ -17,10 +17,10 @@ class ClusterAnnotation(BaseModel):
     # Optional: when the LLM returns a name, we use it; otherwise the
     # renderer falls back to a deterministic "{kw1} / {kw2}" name from the
     # cluster's top c-TF-IDF keywords.
-    name: str | None = Field(default=None, max_length=80)
-    summary: str = Field(..., min_length=5, max_length=600)
+    name: str | None = Field(default=None, max_length=160)
+    summary: str = Field(..., min_length=5, max_length=1000)
     top_quotes: list[str] = Field(default_factory=list, max_length=5)
-    emotional_tone: str = Field(..., min_length=2, max_length=60)
+    emotional_tone: str = Field(..., min_length=2, max_length=120)
 
 
 class Tension(BaseModel):

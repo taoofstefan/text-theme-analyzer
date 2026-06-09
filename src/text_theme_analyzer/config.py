@@ -208,6 +208,11 @@ def apply_env_overrides(config: Config) -> None:
         config.ollama.base_url = env
     if env := os.environ.get("TEXTHEME_OLLAMA_MODEL"):
         config.model = env
+    if env := os.environ.get("TEXTHEME_OLLAMA_TIMEOUT"):
+        try:
+            config.ollama.timeout_s = float(env)
+        except ValueError:
+            pass  # Ignore malformed timeout env vars — the YAML / default wins.
     if env := os.environ.get("TEXTHEME_CACHE_DIR"):
         config.cache_dir = Path(env)
     if env := os.environ.get("TEXTHEME_LOG_LEVEL"):
