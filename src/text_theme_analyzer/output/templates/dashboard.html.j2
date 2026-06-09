@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Text Theme Analyzer — {{ meta.run_date }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #181b22;
+      --panel-2: #1f242d;
+      --border: #2a3038;
+      --text: #e6e8eb;
+      --muted: #8a94a6;
+      --accent: #6ec1ff;
+      --accent-2: #f0a868;
+      --good: #6ec47a;
+      --warn: #f0a868;
+      --bad: #e87b7b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+      line-height: 1.5;
+    }
+    header {
+      padding: 24px 32px;
+      background: linear-gradient(180deg, var(--panel) 0%, var(--bg) 100%);
+      border-bottom: 1px solid var(--border);
+    }
+    h1 { margin: 0 0 4px 0; font-size: 1.5em; }
+    .subtitle { color: var(--muted); font-size: 0.9em; }
+    nav {
+      padding: 12px 32px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 10;
+    }
+    nav a {
+      color: var(--accent);
+      text-decoration: none;
+      margin-right: 16px;
+      font-size: 0.9em;
+    }
+    nav a:hover { text-decoration: underline; }
+    main { padding: 24px 32px; max-width: 1200px; margin: 0 auto; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 24px;
+    }
+    h2 { margin-top: 0; font-size: 1.2em; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    h3 { margin-top: 1.4em; font-size: 1.05em; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; }
+    td { font-size: 0.95em; }
+    tr:hover td { background: var(--panel-2); }
+    .muted { color: var(--muted); }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.85em; font-weight: 500; }
+    .pill-date { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+    .pill-promote { background: rgba(110, 196, 122, 0.2); color: var(--good); }
+    .pill-archive { background: rgba(232, 123, 123, 0.2); color: var(--bad); }
+    .pill-keep { background: rgba(110, 193, 255, 0.2); color: var(--accent); }
+    .pill-severity-strong { background: rgba(240, 168, 104, 0.25); color: var(--warn); border: 1px solid var(--warn); }
+    .pill-severity-medium { background: rgba(110, 193, 255, 0.15); color: var(--accent); }
+    .pill-severity-weak { background: rgba(138, 148, 166, 0.15); color: var(--muted); }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 12px;
+    }
+    .quote {
+      border-left: 3px solid var(--accent);
+      padding: 4px 12px;
+      margin: 6px 0;
+      color: var(--muted);
+      font-style: italic;
+    }
+    canvas { max-width: 100%; }
+    .small { font-size: 0.85em; color: var(--muted); }
+    .emotional { color: var(--accent-2); font-style: italic; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Text Theme Analyzer</h1>
+    <div class="subtitle">
+      {{ meta.note_count }} notes · {{ meta.chunk_count }} chunks ·
+      {% if meta.date_range %}
+        <span class="pill pill-date">{{ meta.date_range[0] }} → {{ meta.date_range[1] }}</span>
+      {% else %}
+        <span class="pill pill-date">no dates</span>
+      {% endif %} ·
+      generated {{ meta.run_date }}
+    </div>
+  </header>
+
+  <nav>
+    <a href="#summary">Summary</a>
+    <a href="#top-themes">Themes</a>
+    <a href="#over-time">Over time</a>
+    <a href="#cluster-map">Cluster map</a>
+    {% if has_enrichment %}<a href="#narratives">Narratives</a>{% endif %}
+    {% if has_enrichment %}<a href="#tensions">Tensions</a>{% endif %}
+    {% if has_enrichment %}<a href="#articles">Articles</a>{% endif %}
+    <a href="#stale">Stale</a>
+    <a href="#files">Files</a>
+  </nav>
+
+  <main>
+    <section id="summary">
+      <h2>Summary</h2>
+      <table>
+        <tr><th>Notes analyzed</th><td>{{ meta.note_count }}</td></tr>
+        <tr><th>Chunks</th><td>{{ meta.chunk_count }}</td></tr>
+        {% if meta.date_range %}
+        <tr><th>Date range</th><td>{{ meta.date_range[0] }} → {{ meta.date_range[1] }}</td></tr>
+        {% endif %}
+        {% if meta.cluster_count is not none %}
+        <tr><th>Clusters</th><td>{{ meta.cluster_count }} ({{ meta.outlier_count }} outliers)</td></tr>
+        {% endif %}
+        {% if meta.spike_count is not none %}
+        <tr><th>Spikes</th><td>{{ meta.spike_count }}</td></tr>
+        <tr><th>Stale-buts</th><td>{{ meta.stale_count }}</td></tr>
+        {% endif %}
+        <tr><th>Source</th><td class="muted">{{ meta.input_path }}</td></tr>
+      </table>
+    </section>
+
+    <section id="top-themes">
+      <h2>Top themes</h2>
+      <p class="muted">Keyphrase document frequency — how many notes each phrase appears in.</p>
+      <canvas id="themes-chart" height="120"></canvas>
+    </section>
+
+    {% if has_timeseries %}
+    <section id="over-time">
+      <h2>Themes over time</h2>
+      <p class="muted">Weekly note counts per top-5 cluster. Click a legend entry to toggle.</p>
+      <canvas id="over-time-chart" height="120"></canvas>
+    </section>
+    {% endif %}
+
+    {% if has_umap %}
+    <section id="cluster-map">
+      <h2>Cluster map</h2>
+      <p class="muted">UMAP 2D projection of all chunks. Hover for cluster name + top keywords.</p>
+      <canvas id="cluster-map-chart" height="380"></canvas>
+    </section>
+    {% endif %}
+
+    {% if has_enrichment %}
+    <section id="narratives">
+      <h2>Cluster narratives</h2>
+      <p class="muted">LLM-generated names, summaries, and strong quotes per cluster.</p>
+      {% for ann in enrichment_clusters %}
+        <div class="card">
+          <h3>Cluster {{ ann.cluster_id }}: {{ ann.name }}</h3>
+          <div class="emotional small">{{ ann.emotional_tone }}</div>
+          <p>{{ ann.summary }}</p>
+          {% if ann.top_quotes %}
+            {% for q in ann.top_quotes %}
+              <div class="quote">"{{ q }}"</div>
+            {% endfor %}
+          {% endif %}
+        </div>
+      {% endfor %}
+      {% if enrichment.quote_validation.dropped %}
+        <p class="small">Quote validation: {{ enrichment.quote_validation.dropped }}/{{ enrichment.quote_validation.requested }} returned quotes were dropped because they didn't appear in the source notes.</p>
+      {% endif %}
+    </section>
+
+    {% if enrichment.tensions %}
+    <section id="tensions">
+      <h2>Tensions</h2>
+      {% for t in enrichment.tensions %}
+        <div class="card">
+          <h3>{{ t.title }}</h3>
+          <table>
+            <tr><th>Pole A</th><td>{{ t.pole_a }}</td></tr>
+            <tr><th>Pole B</th><td>{{ t.pole_b }}</td></tr>
+          </table>
+          {% if t.evidence %}
+            <p class="muted small">Evidence:</p>
+            <ul>
+              {% for e in t.evidence %}<li>{{ e }}</li>{% endfor %}
+            </ul>
+          {% endif %}
+          {% if t.note %}<p class="small"><em>{{ t.note }}</em></p>{% endif %}
+        </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if enrichment.article_candidates %}
+    <section id="articles">
+      <h2>Article candidates</h2>
+      {% for art in enrichment.article_candidates %}
+        <div class="card">
+          <h3>{{ art.title }}</h3>
+          <p>{{ art.angle }}</p>
+          {% if art.supporting_cluster_ids %}
+            <p class="small muted">Supporting clusters: {{ art.supporting_cluster_ids | map('string') | join(', #') | replace('0', '0') }}{#-#}</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+    {% endif %}
+
+    {% if stale_mechanical %}
+    <section id="stale">
+      <h2>Stale-but-recurring</h2>
+      <p class="muted">Clusters that used to recur but have gone quiet in the recent window. Severity ladder: <span class="pill pill-severity-strong">strong</span> = frequent, long-quiet topic worth revisiting; <span class="pill pill-severity-medium">medium</span> = recurred then stopped; <span class="pill pill-severity-weak">weak</span> = low-frequency, extended silence.</p>
+      <table>
+        <tr><th>Cluster</th><th>First seen</th><th>Last seen</th><th>Frequency</th><th>Severity</th><th>Quiet (buckets)</th><th>Verdict</th></tr>
+        {% for s in stale_mechanical %}
+          <tr>
+            <td>{{ s.label }}</td>
+            <td>{{ s.first_seen }}</td>
+            <td>{{ s.last_seen }}</td>
+            <td>{{ s.frequency }}</td>
+            <td>
+              <span class="pill pill-severity-{{ s.severity }}">{{ s.severity }}</span>
+            </td>
+            <td>{{ s.quiet_streak_buckets }}</td>
+            <td>
+              {% if s.verdict %}
+                <span class="pill pill-{{ s.verdict_class }}">{{ s.verdict }}</span>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </table>
+    </section>
+    {% endif %}
+
+    <section id="files">
+      <h2>Files analyzed</h2>
+      <input type="text" id="file-search" placeholder="Filter by title or tag..." style="width:100%; padding:8px; background:var(--panel-2); border:1px solid var(--border); color:var(--text); border-radius:4px; margin-bottom:12px;">
+      <table id="files-table">
+        <tr><th>Title</th><th>File</th><th>Date</th><th>Tags</th><th>Words</th></tr>
+        {% for f in files %}
+          <tr>
+            <td>{{ f.title }}</td>
+            <td class="muted">{{ f.filename }}</td>
+            <td>{{ f.date or "—" }}</td>
+            <td>{{ f.tags | join(", ") }}</td>
+            <td>{{ f.word_count }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </section>
+  </main>
+
+  <script id="tta-data" type="application/json">{{ data_json | safe }}</script>
+  <script>
+    (function() {
+      const data = JSON.parse(document.getElementById("tta-data").textContent);
+
+      // Color palette for clusters.
+      const palette = [
+        "#6ec1ff", "#f0a868", "#6ec47a", "#e87b7b", "#c79bf0",
+        "#f0e36e", "#68d6f0", "#f068c4", "#9af068", "#6873f0"
+      ];
+      const colorFor = (i) => palette[i % palette.length];
+
+      // Themes bar chart.
+      if (data.themes && data.themes.length) {
+        new Chart(document.getElementById("themes-chart"), {
+          type: "bar",
+          data: {
+            labels: data.themes.map(t => t.phrase),
+            datasets: [{
+              data: data.themes.map(t => t.count),
+              backgroundColor: "#6ec1ff",
+            }]
+          },
+          options: {
+            indexAxis: "y",
+            plugins: { legend: { display: false } },
+            scales: { x: { ticks: { color: "#8a94a6" } }, y: { ticks: { color: "#e6e8eb" } } }
+          }
+        });
+      }
+
+      // Over-time multi-line.
+      if (data.over_time && data.over_time.series && data.over_time.series.length) {
+        const dates = data.over_time.dates;
+        const datasets = data.over_time.series.map((s, i) => ({
+          label: s.label,
+          data: dates.map((d, j) => ({ x: d, y: s.counts[j] })),
+          borderColor: colorFor(i),
+          backgroundColor: colorFor(i),
+          tension: 0.2,
+        }));
+        new Chart(document.getElementById("over-time-chart"), {
+          type: "line",
+          data: { datasets },
+          options: {
+            parsing: false,
+            scales: {
+              x: { type: "time", time: { unit: "month" }, ticks: { color: "#8a94a6" } },
+              y: { beginAtZero: true, ticks: { color: "#8a94a6", precision: 0 } }
+            },
+            plugins: { legend: { labels: { color: "#e6e8eb" } } }
+          }
+        });
+      }
+
+      // Cluster map (scatter).
+      if (data.umap && data.umap.length) {
+        const pointsByCluster = {};
+        data.umap.forEach(p => {
+          if (!pointsByCluster[p.cluster]) pointsByCluster[p.cluster] = [];
+          pointsByCluster[p.cluster].push({ x: p.x, y: p.y, r: 5 });
+        });
+        const datasets = Object.keys(pointsByCluster).map((cid, i) => ({
+          label: "Cluster " + cid,
+          data: pointsByCluster[cid],
+          backgroundColor: colorFor(parseInt(cid, 10) >= 0 ? parseInt(cid, 10) : i),
+        }));
+        new Chart(document.getElementById("cluster-map-chart"), {
+          type: "bubble",
+          data: { datasets },
+          options: {
+            scales: {
+              x: { ticks: { color: "#8a94a6" } },
+              y: { ticks: { color: "#8a94a6" } }
+            },
+            plugins: { legend: { labels: { color: "#e6e8eb" } } }
+          }
+        });
+      }
+
+      // File search filter.
+      const search = document.getElementById("file-search");
+      if (search) {
+        search.addEventListener("input", () => {
+          const q = search.value.toLowerCase();
+          const rows = document.querySelectorAll("#files-table tr");
+          for (let i = 1; i < rows.length; i++) {
+            const text = rows[i].textContent.toLowerCase();
+            rows[i].style.display = text.includes(q) ? "" : "none";
+          }
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

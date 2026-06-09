@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual envs
+.venv/
+venv/
+
+# Editor / tool state
+.vscode/
+.idea/
+*.swp
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.claude/
+
+# Secrets (keep .env.example committed)
+.env
+.env.*
+!.env.example
+
+# Local user config (tuned for the private 2026-06-07 sample corpus)
+text-theme-analyzer.yml
+text-theme-analyzer.local.yml
+
+# Outputs (generated artifacts — never commit run results)
+text-theme-output/
+text-theme-output-llm/
+out/
+reports/
+
+# Caches
+.cache/
+
+# Private note corpora — safety net so a future
+# `text-theme-analyzer-sample-YYYY-MM-DD` folder can never be committed
+text-theme-analyzer-sample-*/
+text-theme-analyzer-sample-*/
+
+# OS
+.DS_Store
+Thumbs.db

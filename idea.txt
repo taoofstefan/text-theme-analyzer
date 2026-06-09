@@ -1,0 +1,22 @@
+The Text Theme Analyzer is basically a small “what do I keep circling around?” tool.
+
+It would take a pile of text — memory notes, articles, braindumps, project logs, Substack drafts — and surface recurring themes, phrases, tensions, and clusters. Not as generic SEO keyword extraction, more as a private thinking radar.
+
+Useful outputs could be:
+
+recurring topics: AI agency, scams, games, work transition, body/training, memory, physical media
+repeated phrases or strong lines
+emotional tones over time
+“you wrote about this 9 times in the last month”
+clusters like AI consulting, agent workflow, Signal Lost, career uncertainty
+contradictions/tensions, e.g. “freedom vs. structure”, “many ideas vs. needing finish lines”
+candidate article themes pulled from raw notes
+stale but recurring ideas that might deserve a project or be archived
+
+A small version could be very buildable:
+Point it at a folder of markdown files.
+Parse title/date/body.
+Extract keywords/keyphrases with simple NLP or an LLM.
+Cluster notes by theme.
+Show a dashboard: top themes, recent spikes, strong quotes, related files.
+Export a markdown report.
