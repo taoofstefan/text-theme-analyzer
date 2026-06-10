@@ -2,12 +2,18 @@
 
 This file collects the next-step ideas that came out of running the
 analyzer end-to-end on a real Obsidian vault (~150 notes, 6 weeks of
-history) on 2026-06-09. They are ordered by ROI for the current user
-(the author of the vault) and grouped by effort.
+history) on 2026-06-09, plus the gaps surfaced by the 2026-06-10
+T1.1–T1.3 ship + lint cleanup. They are ordered by ROI for the
+current user (the author of the vault) and grouped by effort.
 
-None of this is committed as work yet. The current state of the repo
-is at commit `a01442d`: 112/112 tests green, dashboard renders
-cleanly on real data, gitleaks workflow active.
+**Current state of the repo** (commit `48773e7`):
+- 185/185 tests green locally and on CI.
+- Test workflow (`.github/workflows/test.yml`) runs pytest + ruff
+  on a 3.11/3.12 × ubuntu/windows matrix; gitleaks workflow
+  (`.github/workflows/secret-scan.yml`) runs on every push to main.
+- Tier 1 (T1.1, T1.1a, T1.2, T1.3) is fully shipped. T1.1b and
+  T1.2a remain as Tier-1 follow-ups; T1.4 is the new entry
+  (yake zero-dep gap, see below).
 
 ---
 
@@ -110,24 +116,24 @@ stale-detection features.
 > `llm/enrichment.py::_cluster_tags`. Tests in
 > `tests/test_t11_tag_weighted.py` (14 tests).
 
-Right now clusters are formed purely by embedding similarity, and the
-LLM enrichment bundle has no tag information. If notes are tagged
-(`#consulting`, `#game-design`, `#self-reflection`, `#berichteki`,
-etc.), the tool could:
+**How to use it (2026-06-10, post-T1.1):**
 
-- Weight tags heavily during clustering (treat a tag as a strong
-  prior that two notes belong near each other).
-- Pass the tag distribution per cluster to the LLM so cluster
-  narratives reference the tag vocabulary the user already has.
-- Let the user query "show me what's happening in the consulting
-  lane this month" instead of getting one global view.
+The flag is off by default so existing runs are unchanged. To turn
+it on, pass `--tag-weight 0.3` (or similar; tune by re-running and
+eyeballing the dashboard's tag column). The matrix scales the tag
+contribution to the embedding vector, so a value of `0.0` is the
+pre-T1.1 behavior, `1.0` makes tags as influential as one
+embedding dimension, and anything in between is a soft nudge. The
+LLM side is independent: cluster names will pull from the user's
+tag vocabulary regardless of `--tag-weight`.
 
-Implementation sketch: add `tags` to the `Note` dataclass (it
-already exists in `model.py`), propagate through `build_bundle()`,
-and add a `--tag-weight` CLI flag that reweights embeddings by tag
-overlap before clustering.
-
-**Highest leverage change for the current user's day-to-day use.**
+**File pointers:**
+- `src/text_theme_analyzer/pipeline/clustering.py::build_tag_matrix`
+  + `cluster_chunks` (the `np.hstack([embeddings, tag_matrix * tag_weight])` line)
+- `src/text_theme_analyzer/llm/enrichment.py::_cluster_tags`
+  (per-cluster tag distribution)
+- `src/text_theme_analyzer/llm/prompts.py` (the new system-prompt
+  nudge to prefer existing tag vocabulary)
 
 ### T1.1a — Reconcile the tag-string vs. tag-matrix design split
 
@@ -141,7 +147,7 @@ overlap before clustering.
 > shrinks the JSON artifact by ~16KB on a 205-chunk corpus with 20
 > tags). Tests in `tests/test_t11_tag_weighted.py` cover the new
 > shape (frequency order, dedup, columns/width invariant, alignment
-> to matrix indices, empty-corpus fallback). 156/156 tests green.
+> to matrix indices, empty-corpus fallback). 185/185 tests green.
 
 > **TODO** (flagged at end of T1.1a implementation). The
 > `build_tag_matrix` signature is now ready for per-tag weights,
@@ -194,40 +200,36 @@ overlap before clustering.
 > handler); `output/templates/dashboard.html.j2` (CSS + button +
 > JS). Tests: `tests/test_t12_promote.py` (26 tests).
 
-The model already produces `stale_recurring` verdicts with a
-`Literal["promote_to_project", "archive", "keep_observing"]` field
-(`src/text_theme_analyzer/llm/schemas.py`). The dashboard renders
-them as read-only text.
+**How to use it (2026-06-10, post-T1.2):**
 
-The dashboard could render each verdict as a clickable button. The
-"promote" action would either:
+Two flows, both available now:
 
-- Copy a pre-filled note stub (title from the verdict, body from
-  the supporting cluster excerpts) to a destination folder the
-  user configures, **or**
-- Append to a `Memory Vault Kanban.md`-style file the user already
-  maintains (the vault has one in `90 System/`).
+1. **From the dashboard.** Open `out/dashboard.html` in a browser,
+   find the `stale-but-recurring` table, and click the **Copy
+   command** button next to any `promote_to_project` verdict. The
+   button copies a `tta promote <key> --from-run <output-dir>`
+   invocation to the clipboard with a 2-second "Copied ✓" toast.
+   Paste it into a terminal and run it.
 
-This is blocked on a design decision — **where do promoted projects
-live?** — which the user has to make before any of this is
-implementable. Worth a 10-minute conversation.
+2. **From a fresh `analyze` run.** The cluster-level `promote_key`
+   field is now in `themes.json` (top-level `promote_keys` map) and
+   in the LLM enrichment bundle, so external scripts (or the
+   Obsidian Templater plugin) can iterate over them without parsing
+   the dashboard.
 
-**Design rule (must hold for any implementation): vault-agnostic.**
-The promote action must not assume Obsidian. Obsidian-specific
-features — Kanban plugin rendering, `[[wikilinks]]`, the `.obsidian/`
-config directory, the vault's `00 Inbox/` convention — are *free
-upgrades* for users who happen to use Obsidian, not requirements
-for the tool to work. Concretely: the dashboard writes standard
-markdown to a path the user configures (`promote.target_file` in
-`text-theme-analyzer.yml`, defaulting to a `promoted-projects.md`
-next to the input folder); optional `promote.sections` headings
-(letting the user set up a Kanban-style column structure) are
-plain `## ` headings, no plugin needed to *write* to them. Any
-links to source notes use standard markdown link syntax
-(`[excerpt](path/to/source.md)`), not `[[wikilinks]]`. The
-Obsidian Kanban plugin will render the headings as columns for
-free; a non-Obsidian user gets a normal markdown file in any
-editor.
+The output file is configured via `promote.target_file` in
+`text-theme-analyzer.yml` (default: `./promoted-projects.md` next
+to the input folder). Re-promoting the same `promote_key`
+*replaces* the existing stub in place via an invisible HTML-comment
+marker — no wikilinks, no frontmatter, no Obsidian assumptions.
+
+**Design rule (vault-agnostic, must hold for any future work):**
+The promote action does not assume Obsidian. Optional `promote.sections`
+headings are plain `## ` markdown headings, not Obsidian Kanban
+plugin syntax. Links to source notes use standard markdown
+`[excerpt](path/to/source.md)` syntax, not `[[wikilinks]]`. The
+Obsidian Kanban plugin renders the headings as columns for free;
+a non-Obsidian user gets a normal markdown file in any editor.
 
 ### T1.2a — Smarter section routing for promote stubs
 
@@ -311,6 +313,60 @@ that's still alive". Not a real user request yet.
 > - `src/text_theme_analyzer/output/templates/diff_dashboard.html.j2`
 > - `src/text_theme_analyzer/cli.py:diff_runs` (the updated
 >   subcommand with `--html` and `--match-threshold`)
+
+### T1.4 — Real zero-dep fallback for the keyword extractor
+
+> **OPEN** (gap surfaced 2026-06-10, see commit `48773e7` and the
+> `project-extract-with-yake-not-zero-dep` memory). Currently
+> *worked around* with `pytest.importorskip("yake")` in 4
+> end-to-end tests so CI's lean install passes — but the
+> underlying bug is unfixed.
+
+The pipeline's `keywords.py::extract_with_yake` has a docstring
+that says "YAKE fallback: zero-dep, but lower quality. Scores are
+inverted (higher = better)." It is **not** zero-dep — the function
+body does `import yake` and crashes if the package is missing. The
+orchestrator (`pipeline/orchestrator.py:66`) calls
+`extract_keyphrases(..., method="yake")` by default, so a lean
+install (`pip install -e ".[dev]"` without the heavy extras)
+crashes the *entire* pipeline on `ModuleNotFoundError: No module
+named 'yake'`. The `extract_keyphrases` wrapper has a
+`try: extract_with_keybert ... except ImportError: extract_with_yake`
+path that *was* meant to be the fallback chain, but the orchestrator
+bypasses it by passing `method="yake"` directly.
+
+The right fix is two changes:
+
+1. **Replace `extract_with_yake` with a real zero-dep fallback.**
+   A small TF-IDF-lite or word-frequency + noun-phrase extractor
+   (~50 lines, no deps). It will be lower quality than yake/keybert
+   but actually zero-dep, so the docstring claim becomes true.
+2. **Change the orchestrator default to `method="keybert"`.** The
+   `try/except ImportError` in `extract_keyphrases` then actually
+   fires on lean installs, and keybert-heavy users get the better
+   result. The default works on every install.
+
+After the fix, the `pytest.importorskip("yake")` gates on the 4
+end-to-end tests can be removed (the tests no longer need to skip
+on lean installs because the pipeline no longer crashes).
+
+**Why this matters:** today, anyone who installs the package via
+`pip install text-theme-analyzer` (not `pip install -e ".[heavy]"`)
+and runs `tta analyze` will hit this. It's the one "looks like it
+should work but doesn't" install path left in the project.
+
+**File pointers:**
+- `src/text_theme_analyzer/pipeline/keywords.py:152`
+  (`extract_with_yake` — the docstring lie is here)
+- `src/text_theme_analyzer/pipeline/keywords.py:171`
+  (`extract_keyphrases` — the existing `try/except ImportError`
+  fallback chain; just needs the orchestrator to use it)
+- `src/text_theme_analyzer/pipeline/orchestrator.py:66`
+  (`method="yake"` default; should be `method="keybert"`)
+- `tests/test_cli_glob_recovery.py:148`,
+  `tests/test_config_precedence.py:66, 81`,
+  `tests/test_m5.py:127` — the 4 importorskip gates to remove
+  after the fix lands.
 
 ---
 

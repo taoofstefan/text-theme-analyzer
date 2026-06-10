@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-A "thinking radar" for a folder of markdown notes. It surfaces recurring themes, BERTopic clusters, strong quotes, tensions, time-series spikes, stale-but-recurring ideas, emotional tone, and (optionally) LLM-extracted article candidates. Five milestones are complete (ingest → keywords → embeddings → clustering → LLM enrichment), and four output formats ship side-by-side: markdown report, JSON, self-contained HTML dashboard, and rich-CLI terminal summary.
+A "thinking radar" for a folder of markdown notes. It surfaces recurring themes, BERTopic clusters, strong quotes, tensions, time-series spikes, stale-but-recurring ideas, emotional tone, and (optionally) LLM-extracted article candidates. Five milestones are complete (ingest → keywords → embeddings → clustering → LLM enrichment), and four output formats ship side-by-side: markdown report, JSON, self-contained HTML dashboard, and rich-CLI terminal summary. Tier 1 is mostly shipped: T1.1 (tag-weighted clustering + tag-aware LLM prompt), T1.1a (reconciled tag-string/tag-matrix design), T1.2 (`tta promote` action), and T1.3 (`tta diff` multi-run comparison). Remaining Tier 1 items: T1.1b (per-tag weights), T1.2a (smarter section routing for promote), T1.4 (real zero-dep keyword fallback — see `docs/FOLLOW_UP.md`).
 
 See `README.md` for the user-facing surface (CLI flags, env vars, config file, output formats) and `docs/FOLLOW_UP.md` for the Tier 1/2/3 next-step ideas and the known limitations of the current run.
 
@@ -73,7 +73,9 @@ src/text_theme_analyzer/
 │   ├── json_report.py
 │   ├── html_dashboard.py  # Jinja2 template at output/templates/dashboard.html.j2
 │   ├── cli_summary.py     # rich-rendered terminal output
-│   └── history.py         # run-snapshot writer (see "Run history" below)
+│   ├── history.py         # run-snapshot writer (see "Run history" below)
+│   ├── diff_dashboard.py  # T1.3: `tta diff --html` output
+│   └── promote.py         # T1.2: `tta promote` stub writer
 └── utils/
     ├── dates.py           # tolerant frontmatter date parsing
     ├── hashing.py         # content-addressed cache keys
@@ -94,7 +96,7 @@ The LLM stage is **on by default** and **degrades gracefully**: if the call fail
 
 ### Run history
 
-Every run writes a snapshot to `{output_dir}/run-history/{timestamp}.json` via `output/history.py`. The `runs` CLI subcommand is a stub today; Tier 1.3 in `docs/FOLLOW_UP.md` is the plan for what it should become (multi-run diff). When changing the run snapshot schema, keep the JSON additive — old snapshots should still load.
+Every run writes a snapshot to `{output_dir}/run-history/{timestamp}.json` via `output/history.py`. Two CLI subcommands consume the snapshots: `tta runs` (list, oldest-first) and `tta diff OLD NEW` (multi-run comparison with IDF-weighted cluster matching, optional `--html PATH` output, optional `--match-threshold FLOAT` knob, see `output/diff_dashboard.py` and `output/templates/diff_dashboard.html.j2`). When changing the run snapshot schema, keep the JSON additive — old snapshots should still load.
 
 ## Conventions specific to this project
 
@@ -102,7 +104,7 @@ Every run writes a snapshot to `{output_dir}/run-history/{timestamp}.json` via `
 - **Globs** in `--include` / `--exclude` are matched with a hand-rolled `fnmatch` normalizer in `ingest.py` (strips leading `**/`, matches both name and relpath). Don't swap it for `pathlib.PurePath.match` — that breaks on Windows path separators. There is a dedicated regression test at `tests/test_cli_glob_recovery.py`.
 - **Schemas are a contract.** `llm/schemas.py` Pydantic models define the post-validation shape of the LLM response. Field length caps were loosened in commit `a01442d` (60/80/600 → 120/160/1000) — the real-corpus run hit those ceilings. Bump caps defensively, but think about it.
 - **Outputs are additive.** Each output format is independent; removing one renderer should not affect the others. `cli.py` is the only place that fans out to the four of them.
-- **The test suite is the spec.** Heavy-deps tests use `pytest.importorskip` so the suite runs even without the M2 stack (sentence-transformers, BERTopic, etc.) installed.
+- **The test suite is the spec.** Heavy-deps tests use `pytest.importorskip` so the suite runs even without the M2 stack (sentence-transformers, BERTopic, etc.) installed. End-to-end tests that go through the orchestrator also need `pytest.importorskip("yake")` because the keyword extractor defaults to `method="yake"` and the orchestrator's heavy-deps path isn't gated otherwise — see T1.4 in `docs/FOLLOW_UP.md` for the underlying zero-dep gap.
 
 ## What is private and what is committed
 
@@ -117,7 +119,7 @@ Every run writes a snapshot to `{output_dir}/run-history/{timestamp}.json` via `
 
 If you add a new sample corpus, give it a `text-theme-analyzer-sample-YYYY-MM-DD` name. The `text-theme-analyzer-sample-*/` gitignore pattern is a safety net so a future folder of that shape can never be committed by accident. **Do not** loosen these patterns without checking with the user.
 
-The CI workflow at `.github/workflows/secret-scan.yml` runs `gitleaks` over full history on PRs and on every push to main. It is the second line of defence behind the `.gitignore` patterns; it has caught nothing in practice, which is the desired outcome.
+The CI workflows at `.github/workflows/secret-scan.yml` (gitleaks, over full history on PRs and every push to main) and `.github/workflows/test.yml` (pytest + ruff on a 3.11/3.12 × ubuntu/windows matrix, on every PR and push to main) are the second line of defence behind the `.gitignore` patterns. Gitleaks has caught nothing in practice, which is the desired outcome.
 
 ## How to add a new pipeline stage
 
@@ -133,6 +135,6 @@ There is no plugin registry. To add a stage, you:
 
 - No `Makefile`, `tox.ini`, `noxfile.py`, or `pyproject.toml` `[tool.poetry]` section. Build backend is `setuptools`.
 - No `mypy` in the `[dev]` extras (it's listed in the README's optional section but not declared in `pyproject.toml`).
-- No `pre-commit` config or local gitleaks hook. The CI workflow covers PRs; local development relies on the developer running `ruff` manually. Closing this gap is on the short-term roadmap.
+- No `pre-commit` config installed locally. `.pre-commit-config.yaml` is in the repo and ready to use, but `pre-commit install` is not run as part of any dev setup. Local development relies on the developer running `ruff` manually; the CI workflow is the enforcement.
 - No `CLAUDE.md` parent / nested rules. This file is the only one.
 - No docs site. `docs/` contains only `FOLLOW_UP.md`. The README is the canonical reference.
