@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from text_theme_analyzer.cli import main
@@ -62,6 +63,7 @@ def _run_in(working_dir: Path, args: list[str]) -> Path:
 
 def test_yaml_overrides_default_output_dir(tmp_path: Path) -> None:
     """No CLI --output-dir: the YAML's output_dir must beat the dataclass default."""
+    pytest.importorskip("yake")
     notes = tmp_path / "notes"
     _write_two_note_corpus(notes)
     yaml_dir = tmp_path / "from_yaml"
@@ -76,6 +78,7 @@ def test_yaml_overrides_default_output_dir(tmp_path: Path) -> None:
 
 def test_cli_flag_overrides_yaml_output_dir(tmp_path: Path) -> None:
     """CLI --output-dir must beat the YAML's output_dir (the original bug)."""
+    pytest.importorskip("yake")
     notes = tmp_path / "notes"
     _write_two_note_corpus(notes)
     yaml_dir = tmp_path / "from_yaml"
