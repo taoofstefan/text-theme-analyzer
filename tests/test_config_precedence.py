@@ -21,7 +21,6 @@ from text_theme_analyzer.config import (
     load_yaml_config,
 )
 
-
 # --- helpers ---
 
 

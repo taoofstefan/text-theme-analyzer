@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-import pytest
-
 from text_theme_analyzer.output.html_dashboard import render_html, write_html
 from text_theme_analyzer.pipeline.model import Analysis, ClusterResult, Note, NoteChunk
 

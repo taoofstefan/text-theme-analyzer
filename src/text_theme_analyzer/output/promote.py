@@ -33,7 +33,6 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-
 # Marker format used to re-locate a previously-written stub. Appears as
 # the first non-blank line of the stub's body. Invisible in any
 # markdown renderer.
@@ -251,7 +250,7 @@ def apply_promotion(
 
     # 2. No matching stub — append under the chosen bucket.
     bucket = _select_bucket_heading(
-        [l for l in lines if l.startswith("## ")], target_section,
+        [line for line in lines if line.startswith("## ")], target_section,
     )
     bucket_span = _find_bucket_span(lines, bucket)
     if bucket_span is not None:

@@ -9,9 +9,8 @@ lexicon approach is fast, free, and good enough for a quick trend line.
 from __future__ import annotations
 
 import re
-from collections import Counter
 from dataclasses import dataclass
-
+from datetime import date
 
 # Compact English affect word list (positive / negative / arousal markers).
 # Deliberately small — this is a heuristic, not a model. Words are lowercase.
@@ -91,7 +90,7 @@ def tone_label(score: ToneScore) -> str:
 
 def tone_over_time(
     per_note: dict[str, str],
-    note_dates: dict[str, "date | None"],
+    note_dates: dict[str, date | None],
     *,
     bucket: str = "month",
 ) -> list[dict]:

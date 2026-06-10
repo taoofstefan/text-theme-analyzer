@@ -15,12 +15,11 @@ import json
 import math
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from text_theme_analyzer.pipeline.model import Analysis
-
 
 HISTORY_DIRNAME = "run-history"
 HISTORY_SCHEMA_VERSION = "1.0"
@@ -82,7 +81,7 @@ class RunSnapshot:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "RunSnapshot":
+    def from_dict(cls, d: dict[str, Any]) -> RunSnapshot:
         return cls(
             timestamp=d["timestamp"],
             note_count=d["note_count"],
@@ -128,7 +127,7 @@ def snapshot_from_analysis(analysis: Analysis, *, top_keyphrases: int = 30) -> R
     date_range = analysis.metadata.get("date_range")
     # Filename-safe variant (no colons — invalid on Windows). The full ISO
     # string is still stored inside the JSON for parsers that need it.
-    ts = datetime.now(timezone.utc)
+    ts = datetime.now(UTC)
     return RunSnapshot(
         timestamp=ts.strftime("%Y-%m-%dT%H-%M-%SZ"),
         note_count=len(analysis.notes),

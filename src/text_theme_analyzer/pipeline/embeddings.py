@@ -12,14 +12,13 @@ zero-vector.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 
 from text_theme_analyzer.utils.hashing import normalize_text, sha256_hex
-from text_theme_analyzer.utils.progress import progress
 
 
 def _model_safe_name(model_name: str) -> str:

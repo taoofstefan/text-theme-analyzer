@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from datetime import date
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -59,14 +59,14 @@ def load_dotenv(path: Path | None = None, *, override: bool = False) -> list[str
     return set_keys
 
 
-class OutputFormat(str, Enum):
+class OutputFormat(StrEnum):
     MARKDOWN = "markdown"
     JSON = "json"
     HTML = "html"
     CLI = "cli"
 
 
-class Provider(str, Enum):
+class Provider(StrEnum):
     OLLAMA = "ollama"
     OPENAI_COMPAT = "openai_compat"
 

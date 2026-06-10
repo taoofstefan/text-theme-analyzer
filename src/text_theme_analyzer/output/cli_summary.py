@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import date
-from typing import Any
-
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
-from rich import box
 
 from text_theme_analyzer.pipeline.model import Analysis
 

@@ -17,7 +17,6 @@ import json
 import re
 from collections import Counter
 from datetime import date
-from typing import Iterable
 
 from pydantic import ValidationError
 
@@ -29,7 +28,6 @@ from text_theme_analyzer.llm.schemas import (
     QuoteValidation,
 )
 from text_theme_analyzer.pipeline.model import Analysis
-
 
 # Rough per-character-to-token estimate. ~4 chars per token for English.
 # Used to size the bundle so it fits comfortably in a 16K context window.
@@ -172,7 +170,6 @@ def _cluster_keyphrases(analysis: Analysis, top_n: int = 8) -> dict[int, list[st
     """Per-cluster keyphrase list from analysis.keywords (aggregated across notes in the cluster)."""
     if analysis.clusters is None:
         return {}
-    note_by_id = {n.id: n for n in analysis.notes}
     note_to_cluster: dict[str, int] = {}
     for idx, cid in enumerate(analysis.clusters.assignments):
         if cid == -1:

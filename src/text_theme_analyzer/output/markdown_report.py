@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from text_theme_analyzer.pipeline.clustering import note_to_cluster
 from text_theme_analyzer.pipeline.model import Analysis
 
 
@@ -62,7 +61,6 @@ def render_markdown(analysis: Analysis, *, top_n_themes: int = 15) -> str:
         lines.append("")
         lines.append("Thematic groups found by BERTopic. Top keywords via c-TF-IDF.")
         lines.append("")
-        n2c = note_to_cluster(analysis.chunk_note_ids, analysis.clusters.assignments)
         note_by_id = {n.id: n for n in analysis.notes}
         lines.append("| Cluster | Size | Top keywords | Representative notes |")
         lines.append("|---|---:|---|---|")

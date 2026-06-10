@@ -13,9 +13,7 @@ import numpy as np
 import pytest
 
 from text_theme_analyzer.pipeline.embeddings import EmbeddingCache
-from text_theme_analyzer.pipeline.model import Note
-from text_theme_analyzer.pipeline.timeseries import build_timeseries, _bucket_start
-
+from text_theme_analyzer.pipeline.timeseries import _bucket_start, build_timeseries
 
 # --- EmbeddingCache ---
 
@@ -266,8 +264,9 @@ def test_clustering_stopword_list_includes_csv_labels() -> None:
     """The labels that csv_ingest writes into row bodies must be stopwords
     in the cluster keyword extractor, otherwise they dominate the
     cluster top-words list on mixed markdown+CSV corpora."""
-    from text_theme_analyzer.pipeline.clustering import cluster_chunks
     import inspect
+
+    from text_theme_analyzer.pipeline.clustering import cluster_chunks
     src = inspect.getsource(cluster_chunks)
     # Spot-check the CSV bleed-through terms
     for w in ("draft", "low", "medium", "approve", "tone", "status"):

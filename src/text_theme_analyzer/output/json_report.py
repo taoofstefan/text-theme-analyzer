@@ -10,7 +10,6 @@ from pathlib import Path
 
 from text_theme_analyzer.pipeline.model import Analysis
 
-
 SCHEMA_VERSION = "1.0"
 
 
@@ -79,7 +78,7 @@ def analysis_to_dict(analysis: Analysis) -> dict:
                     if i < len(analysis.clusters.assignments) else -1,
                 }
                 for i, ((x, y), nid) in enumerate(
-                    zip(analysis.clusters.umap_2d, analysis.chunk_note_ids)
+                    zip(analysis.clusters.umap_2d, analysis.chunk_note_ids, strict=False)
                 )
             ],
         }

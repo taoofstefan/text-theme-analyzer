@@ -11,14 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from text_theme_analyzer.config import Config, OutputFormat, Provider, load_dotenv
+from text_theme_analyzer.config import load_dotenv
 from text_theme_analyzer.output.markdown_report import render_markdown
 from text_theme_analyzer.pipeline.csv_ingest import DEFAULT_COLUMN_MAP, load_csv
 from text_theme_analyzer.pipeline.ingest import discover_notes, load_note, load_notes
 from text_theme_analyzer.pipeline.keywords import _aggregate_frequency
-from text_theme_analyzer.pipeline.model import Analysis, ClusterResult
+from text_theme_analyzer.pipeline.model import Analysis
 from text_theme_analyzer.pipeline.preprocess import chunk_text, clean_body, preprocess_note
-
 
 # --- ingest ---
 
@@ -96,7 +95,6 @@ def test_chunk_text_splits_long_bodies() -> None:
 
 
 def test_preprocess_note_returns_at_least_one_chunk() -> None:
-    note = load_note.__wrapped__ if hasattr(load_note, "__wrapped__") else None
     from text_theme_analyzer.pipeline.model import Note
     n = Note(
         id="abc123def456",

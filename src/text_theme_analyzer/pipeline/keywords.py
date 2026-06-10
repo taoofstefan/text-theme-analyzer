@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Iterable
+from collections.abc import Iterable
 
 from text_theme_analyzer.pipeline.model import Note, NoteChunk
-
 
 # Common stopwords used to filter phrases that are all stopwords.
 # KeyBERT already drops these, but YAKE doesn't, and chunk-level rollups

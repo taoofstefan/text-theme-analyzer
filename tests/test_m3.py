@@ -12,20 +12,24 @@ from pathlib import Path
 import httpx
 import pytest
 
+from text_theme_analyzer.config import Config, Provider
 from text_theme_analyzer.llm.base import LLMError
 from text_theme_analyzer.llm.enrichment import (
     _sample_quotes,
+    _validate_quotes,
     build_bundle,
     enrich,
-    _validate_quotes,
 )
 from text_theme_analyzer.llm.factory import build_client
 from text_theme_analyzer.llm.openai_compat import OpenAICompatibleClient
-from text_theme_analyzer.llm.schemas import ClusterAnnotation, EnrichmentResult, QuoteValidation, Tension
-from text_theme_analyzer.config import Config, Provider
+from text_theme_analyzer.llm.schemas import (
+    ClusterAnnotation,
+    EnrichmentResult,
+    QuoteValidation,
+    Tension,
+)
 from text_theme_analyzer.output.json_report import analysis_to_dict
 from text_theme_analyzer.pipeline.model import Analysis, ClusterResult, Note, NoteChunk
-
 
 # --- OpenAICompatibleClient mocked transport ---
 

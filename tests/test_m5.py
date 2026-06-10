@@ -7,13 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from text_theme_analyzer.config import Config, OutputFormat, Provider
+from text_theme_analyzer.config import Config, Provider
 from text_theme_analyzer.llm.base import LLMError
 from text_theme_analyzer.llm.factory import build_client
 from text_theme_analyzer.output.markdown_report import render_markdown
-from text_theme_analyzer.pipeline.model import Analysis, ClusterResult, Note
+from text_theme_analyzer.pipeline.model import Analysis, Note
 from text_theme_analyzer.pipeline.tone import score_text, tone_label, tone_over_time
-
 
 # --- tone ---
 
@@ -125,6 +124,7 @@ def test_markdown_includes_tone_section() -> None:
 def test_cli_no_llm_produces_all_outputs(tmp_path: Path) -> None:
     """End-to-end smoke: --no-llm mode writes all four artifact types without error."""
     from click.testing import CliRunner
+
     from text_theme_analyzer.cli import main
 
     # Need a small notes dir.

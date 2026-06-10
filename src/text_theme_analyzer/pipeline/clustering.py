@@ -15,7 +15,7 @@ Pipeline:
 from __future__ import annotations
 
 from collections import Counter
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -276,7 +276,7 @@ def note_to_cluster(
     """Map each note to the mode of its chunk cluster IDs (skip -1 outliers)."""
     from collections import Counter
     by_note: dict[str, list[int]] = {}
-    for note_id, c in zip(chunk_note_ids, cluster_assignments):
+    for note_id, c in zip(chunk_note_ids, cluster_assignments, strict=False):
         if c == -1:
             continue
         by_note.setdefault(note_id, []).append(c)

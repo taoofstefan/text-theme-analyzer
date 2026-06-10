@@ -20,7 +20,7 @@ def _snap(
     sizes: dict[int, int],
     fingerprints: dict[int, list[str]],
     ts: str = "2025-04-01T10-00-00Z",
-) -> "RunSnapshot":  # noqa: F821
+) -> RunSnapshot:  # noqa: F821
     from text_theme_analyzer.output.history import RunSnapshot
     return RunSnapshot(
         timestamp=ts,

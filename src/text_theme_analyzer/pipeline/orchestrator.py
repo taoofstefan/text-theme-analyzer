@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from text_theme_analyzer.config import Config
@@ -58,7 +57,7 @@ def run(config: Config) -> Analysis:
         chunks = preprocess_note(note)
         chunks_by_note[note.id] = chunks
         all_chunks.extend(chunks)
-        for c in chunks:
+        for _c in chunks:
             chunk_note_ids.append(note.id)
     log(f"[preprocess] {len(all_chunks)} chunks", quiet=config.quiet)
 
@@ -280,8 +279,11 @@ def _estimate_bundle(notes, chunks, chunk_note_ids, clusters, timeseries) -> dic
     from text_theme_analyzer.llm.enrichment import (
         DEFAULT_CHUNK_BODY_CHARS,
         DEFAULT_CHUNKS_PER_CLUSTER,
-        _sample_quotes, _rep_titles, _first_last_seen, _top_chunks_per_cluster,
         _cluster_keyphrases,
+        _first_last_seen,
+        _rep_titles,
+        _sample_quotes,
+        _top_chunks_per_cluster,
     )
     mid = _make_analysis(notes, chunks, chunk_note_ids, {}, [], clusters, timeseries, None)
     quotes = _sample_quotes(mid)

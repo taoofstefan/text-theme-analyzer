@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from text_theme_analyzer.llm.base import LLMError, LLMAuthError, LLMRateLimitError
+from text_theme_analyzer.llm.base import LLMAuthError, LLMError, LLMRateLimitError
 
 
 def _post_chat(

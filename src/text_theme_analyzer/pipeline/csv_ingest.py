@@ -25,6 +25,7 @@ from pathlib import Path
 
 from text_theme_analyzer.pipeline.model import Note
 from text_theme_analyzer.utils.dates import coerce_to_date
+
 DEFAULT_COLUMN_MAP: dict[str, str] = {
     "id": "id",
     "date": "date_created",
@@ -135,7 +136,7 @@ def _row_to_note(
     # Stable ID: hash on path + row index so the same row maps to the
     # same note across re-runs (matches the spirit of note_id_for_path).
     from hashlib import sha1
-    nid = sha1(f"{path.resolve()}::{row_index}".encode("utf-8")).hexdigest()[:12]
+    nid = sha1(f"{path.resolve()}::{row_index}".encode()).hexdigest()[:12]
 
     return Note(
         id=nid,

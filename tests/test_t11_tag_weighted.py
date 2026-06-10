@@ -27,7 +27,6 @@ from text_theme_analyzer.pipeline.model import (
     NoteChunk,
 )
 
-
 # --- helpers ---
 
 def _make_note(nid: str, tags: list[str], body: str = "some body text here") -> Note:
@@ -63,7 +62,6 @@ def test_tag_matrix_shape_and_values() -> None:
     assert mat.shape == (5, 3)
     assert mat.dtype == np.float32
     # Each row is a 0/1 vector. Verify per-note by tag name.
-    notes_by_id = {n.id: n for n in notes}
     for i, note in enumerate(notes):
         row_set = set(j for j, v in enumerate(mat[i]) if v > 0)
         expected = {mat_index for mat_index, tag in enumerate(tag_columns) if tag in note.tags}
@@ -257,7 +255,6 @@ def test_cluster_chunks_with_tag_weight_changes_clustering() -> None:
     emb[2:4, 0] = 1.0   # B (close to A in embedding)
     emb[4:6, 1] = 1.0   # C (far in embedding)
     emb += np.random.default_rng(0).normal(scale=0.02, size=emb.shape)
-    notes_by_id = {n.id: n for n in notes}
     tag_matrix, _tag_columns = build_tag_matrix(notes, chunks, top_n_tags=2)
 
     # Baseline: A and B cluster, C is separate (because embedding distance

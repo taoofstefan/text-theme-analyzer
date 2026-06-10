@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from text_theme_analyzer.output.history import Diff, RunSnapshot
 
 
-def _label(snap: "RunSnapshot", cid: int) -> str:
+def _label(snap: RunSnapshot, cid: int) -> str:
     """Cluster label: LLM name if available, else top-2 keywords, else `#cid`."""
     name = snap.cluster_names.get(cid)
     if name:
@@ -33,7 +33,7 @@ def _label(snap: "RunSnapshot", cid: int) -> str:
     return f"#{cid}"
 
 
-def _matched_pair_rows(diff: "Diff", old: "RunSnapshot", new: "RunSnapshot") -> list[dict]:
+def _matched_pair_rows(diff: Diff, old: RunSnapshot, new: RunSnapshot) -> list[dict]:
     """Build the matched-pairs table rows.
 
     Each row: {similarity, old_cid, old_label, old_size, new_cid, new_label,
@@ -69,7 +69,7 @@ def _matched_pair_rows(diff: "Diff", old: "RunSnapshot", new: "RunSnapshot") -> 
     return rows
 
 
-def _added_rows(diff: "Diff", new: "RunSnapshot") -> list[dict]:
+def _added_rows(diff: Diff, new: RunSnapshot) -> list[dict]:
     return [
         {
             "cid": cid,
@@ -81,7 +81,7 @@ def _added_rows(diff: "Diff", new: "RunSnapshot") -> list[dict]:
     ]
 
 
-def _removed_rows(diff: "Diff", old: "RunSnapshot") -> list[dict]:
+def _removed_rows(diff: Diff, old: RunSnapshot) -> list[dict]:
     return [
         {
             "cid": cid,
@@ -93,7 +93,7 @@ def _removed_rows(diff: "Diff", old: "RunSnapshot") -> list[dict]:
     ]
 
 
-def _headline(diff: "Diff") -> str:
+def _headline(diff: Diff) -> str:
     """One-line summary that goes in the page header."""
     parts: list[str] = []
     if diff.added_clusters:
@@ -111,7 +111,7 @@ def _headline(diff: "Diff") -> str:
     return ", ".join(parts) + "."
 
 
-def render_diff_html(diff: "Diff", old: "RunSnapshot", new: "RunSnapshot") -> str:
+def render_diff_html(diff: Diff, old: RunSnapshot, new: RunSnapshot) -> str:
     """Render the diff dashboard as a self-contained HTML string."""
     template_dir = Path(__file__).parent / "templates"
     env = Environment(

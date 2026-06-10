@@ -20,16 +20,13 @@ Covers:
 from __future__ import annotations
 
 import json
-import re
 from datetime import date
 from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
 
 from text_theme_analyzer.config import (
     Config,
-    apply_env_overrides,
     apply_yaml_overrides,
 )
 from text_theme_analyzer.llm.enrichment import build_bundle
@@ -41,7 +38,6 @@ from text_theme_analyzer.llm.schemas import (
 from text_theme_analyzer.output.html_dashboard import render_html
 from text_theme_analyzer.output.json_report import analysis_to_dict
 from text_theme_analyzer.output.promote import (
-    PROMOTE_MARKER_RE,
     ClusterContext,
     apply_promotion,
     render_promote_stub,
@@ -51,11 +47,9 @@ from text_theme_analyzer.pipeline.model import (
     ClusterResult,
     Note,
     NoteChunk,
-    Spike,
     StaleIdea,
     ThemeTimeseries,
 )
-
 
 # --- helpers ---
 

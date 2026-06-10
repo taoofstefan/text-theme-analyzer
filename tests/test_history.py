@@ -70,7 +70,7 @@ def _snap_with_fingerprints(
     phrases: list[tuple[str, int]] | None = None,
     names: dict[int, str] | None = None,
     ts: str = "2025-04-01T10-00-00Z",
-) -> "RunSnapshot":  # noqa: F821
+) -> RunSnapshot:  # noqa: F821
     """Build a RunSnapshot directly (bypassing snapshot_from_analysis) with explicit
     fingerprints. Used to test the matching algorithm without going through a real
     analysis pipeline (where c-TF-IDF words are not predictable)."""

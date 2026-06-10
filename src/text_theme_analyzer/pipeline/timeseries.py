@@ -57,7 +57,6 @@ def build_timeseries(
     # Build the full bucket axis (so rolling windows have enough history).
     full_axis: list[date] = []
     cursor = first
-    step = timedelta(days=7) if bucket == "week" else timedelta(days=31)
     while cursor <= last:
         full_axis.append(cursor)
         cursor = _step_bucket(cursor, bucket)
@@ -102,11 +101,10 @@ def build_timeseries(
                 quiet_streak += 1
             else:
                 break
-        seen_dates = [b for b, c in zip(full_axis, per_bucket) if c > 0]
+        seen_dates = [b for b, c in zip(full_axis, per_bucket, strict=False) if c > 0]
         if not seen_dates:
             continue
         last_seen = seen_dates[-1]
-        last_seen_idx = full_axis.index(last_seen)
         # Is "last seen" in the first half of the data range? Used for strong.
         first_half_threshold = full_axis[0] + (full_axis[-1] - full_axis[0]) / 2
         in_first_half = last_seen <= first_half_threshold

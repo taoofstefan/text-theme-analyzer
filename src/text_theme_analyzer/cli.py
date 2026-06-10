@@ -38,7 +38,7 @@ def _parse_date(ctx, param, value: str | None) -> date | None:
     try:
         return date.fromisoformat(value)
     except ValueError:
-        raise click.BadParameter(f"Expected ISO date YYYY-MM-DD, got {value!r}")
+        raise click.BadParameter(f"Expected ISO date YYYY-MM-DD, got {value!r}") from None
 
 
 def _build_config(
@@ -313,7 +313,7 @@ def _patched_main(args=None, *call_args, **call_kwargs):
                         _warn_if_glob_expanded(original, Path(rest[1]))
                     except (OSError, ValueError):
                         pass
-        return _original_main(args=None, *call_args, **call_kwargs)
+        return _original_main(*call_args, args=None, **call_kwargs)
     # Explicit args (e.g. CliRunner): repair in place.
     if getattr(main, "_glob_repair_warned", False) is False:
         main._glob_repair_warned = True  # type: ignore[attr-defined]
@@ -324,7 +324,7 @@ def _patched_main(args=None, *call_args, **call_kwargs):
             except (OSError, ValueError):
                 pass
         args = repaired
-    return _original_main(args=args, *call_args, **call_kwargs)
+    return _original_main(*call_args, args=args, **call_kwargs)
 
 
 main.main = _patched_main  # type: ignore[method-assign]
@@ -482,7 +482,8 @@ def analyze(
     # Skipped on dry-run (we returned earlier) and when --no-history was set.
     if not no_history:
         from text_theme_analyzer.output.history import (
-            snapshot_from_analysis, write_snapshot,
+            snapshot_from_analysis,
+            write_snapshot,
         )
         snap = snapshot_from_analysis(analysis)
         snap_path = write_snapshot(snap, config.output_dir)
@@ -524,8 +525,11 @@ def diff_runs(
     snapshot). See ``output/history.py::_match_clusters``.
     """
     from text_theme_analyzer.output.history import (
-        HISTORY_DIRNAME, DEFAULT_MATCH_THRESHOLD, diff_snapshots, list_snapshots,
-        load_snapshot, render_diff,
+        HISTORY_DIRNAME,
+        diff_snapshots,
+        list_snapshots,
+        load_snapshot,
+        render_diff,
     )
     history_dir = output_dir / HISTORY_DIRNAME
     old_path = history_dir / f"{old}.json"

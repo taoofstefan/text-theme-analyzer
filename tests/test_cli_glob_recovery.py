@@ -14,7 +14,6 @@ from pathlib import Path
 
 from text_theme_analyzer.cli import _absorb_expanded_glob_args, _looks_like_path
 
-
 # --- _looks_like_path ---
 
 def test_looks_like_path_recognizes_paths() -> None:
@@ -145,6 +144,7 @@ def test_absorbed_paths_survive_into_click() -> None:
     """End-to-end: with shell-expanded globs, the CLI shouldn't crash
     with 'unexpected extra arguments'."""
     from click.testing import CliRunner
+
     from text_theme_analyzer.cli import main
 
     runner = CliRunner()
