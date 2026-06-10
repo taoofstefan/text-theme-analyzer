@@ -1,0 +1,34 @@
+# Pre-commit hooks for text-theme-analyzer.
+#
+# Local loop that mirrors the CI safety net:
+#   - ruff check --fix + ruff format (style + lint)
+#   - gitleaks (defence-in-depth secret scan, same as the GH Actions workflow)
+#
+# Install (one-time):
+#   pip install pre-commit
+#   pip install -e .[dev]    # pulls in ruff
+#   pre-commit install
+#
+# Then `git commit` runs the hooks on staged files. To run on the whole
+# tree without committing: `pre-commit run --all-files`.
+#
+# CI still runs the same checks via .github/workflows/secret-scan.yml and
+# (separately) the test workflow — pre-commit is just a faster local
+# feedback loop.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      # Lint + autofix (imports, pyupgrade, bugbear, etc. per pyproject.toml).
+      - id: ruff
+        args: ["--fix"]
+        types_or: [python, pyi]
+      # Formatter. Runs after --fix so fixes are reformatted in the same pass.
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks

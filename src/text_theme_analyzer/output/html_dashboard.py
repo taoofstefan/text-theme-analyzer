@@ -90,7 +90,7 @@ def _verdict_class(v: str) -> str:
     }.get(v, "")
 
 
-def render_html(analysis: Analysis) -> str:
+def render_html(analysis: Analysis, output_dir: Path | None = None) -> str:
     template_dir = Path(__file__).parent / "templates"
     env = Environment(
         loader=FileSystemLoader(str(template_dir)),
@@ -108,13 +108,19 @@ def render_html(analysis: Analysis) -> str:
             verdicts[v.cluster_id] = {
                 "verdict": v.verdict,
                 "reasoning": v.reasoning,
+                "theme": v.theme,
             }
 
     stale_mechanical: list[dict] = []
     if analysis.timeseries is not None:
         for s in analysis.timeseries.stale:
             v = verdicts.get(s.cluster_id)
+            # Synthesize the same promote_key the JSON report uses, so the
+            # dashboard button's command resolves to the same record the
+            # CLI looks up. See output/json_report.py::_build_promote_keys.
+            promote_key = f"{s.cluster_id}:{s.last_seen.isoformat() if s.last_seen else 'unknown'}"
             stale_mechanical.append({
+                "cluster_id": int(s.cluster_id),
                 "label": _cluster_label_for(analysis, s.cluster_id),
                 "first_seen": s.first_seen.isoformat(),
                 "last_seen": s.last_seen.isoformat(),
@@ -123,6 +129,7 @@ def render_html(analysis: Analysis) -> str:
                 "quiet_streak_buckets": int(getattr(s, "quiet_streak_buckets", 0) or 0),
                 "verdict": v["verdict"] if v else None,
                 "verdict_class": _verdict_class(v["verdict"]) if v else "",
+                "promote_key": promote_key,
             })
 
     files = [
@@ -140,6 +147,11 @@ def render_html(analysis: Analysis) -> str:
     meta["run_date"] = datetime.now().strftime("%Y-%m-%d %H:%M")
     meta["note_count"] = len(analysis.notes)
     meta["chunk_count"] = len(analysis.chunks)
+    # Surface the output dir to the dashboard's copy-to-clipboard affordance.
+    # Use `as_posix()` so the path is forward-slash on Windows too — the
+    # rendered HTML attribute and the generated `tta promote` command
+    # both work better with POSIX-style paths in attribute values.
+    meta["output_dir"] = output_dir.as_posix() if output_dir is not None else "./text-theme-output"
     if analysis.clusters is not None:
         meta["cluster_count"] = len(analysis.clusters.cluster_keywords)
         meta["outlier_count"] = analysis.clusters.outlier_count
@@ -188,5 +200,5 @@ def render_html(analysis: Analysis) -> str:
 def write_html(analysis: Analysis, output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     out_path = output_dir / "dashboard.html"
-    out_path.write_text(render_html(analysis), encoding="utf-8")
+    out_path.write_text(render_html(analysis, output_dir=output_dir), encoding="utf-8")
     return out_path

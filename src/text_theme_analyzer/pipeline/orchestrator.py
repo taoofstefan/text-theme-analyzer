@@ -6,7 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from text_theme_analyzer.config import Config
-from text_theme_analyzer.pipeline.clustering import cluster_chunks, note_to_cluster
+from text_theme_analyzer.pipeline.clustering import (
+    build_tag_matrix,
+    cluster_chunks,
+    note_to_cluster,
+)
 from text_theme_analyzer.pipeline.embeddings import EmbeddingCache, embed_corpus
 from text_theme_analyzer.pipeline.ingest import load_notes
 from text_theme_analyzer.pipeline.keywords import (
@@ -82,12 +86,31 @@ def run(config: Config) -> Analysis:
     )
     log(f"[embed] shape {embeddings.shape}", quiet=config.quiet)
 
+    # Tag matrix (T1.1). Built once, used by both clustering (when
+    # tag_weight > 0) and the LLM bundle (always — it needs the per-cluster
+    # tag distribution regardless of the clustering weight). When the
+    # corpus has no tags, the matrix is (M, 0) and contributes nothing.
+    # `tag_columns` is the corpus's top-N tag ordering in frequency-desc
+    # order — the hook for future per-tag weight tables (T1.1b). It's
+    # intentionally unused today; `build_tag_matrix` returns it so the
+    # string→index mapping is available at the call site when we need it.
+    tag_matrix, _tag_columns = build_tag_matrix(notes, all_chunks, top_n_tags=config.top_n_tags)
+    if tag_matrix.shape[1] > 0:
+        log(
+            f"[tag] using top {tag_matrix.shape[1]} tags "
+            f"(weight={config.tag_weight})",
+            quiet=config.quiet,
+        )
+
     try:
         clusters = cluster_chunks(
             all_chunks,
             embeddings,
             min_cluster_size=config.min_cluster_size,
             umap_n_neighbors=config.umap_n_neighbors if config.umap_n_neighbors is not None else 15,
+            tag_weight=config.tag_weight,
+            top_n_tags=config.top_n_tags,
+            tag_matrix=tag_matrix,
         )
     except Exception as e:
         log(f"[cluster] skipped (not enough data for UMAP/HDBSCAN): {e}", quiet=config.quiet)

@@ -6,15 +6,20 @@ Pipeline:
 3. c-TF-IDF for cluster keywords (BERTopic does this)
 4. reduce_outliers to reassign ambiguous points
 5. UMAP 2D for the dashboard bubble chart (separate projection)
+6. (optional) Tag-weighted embedding: append a per-chunk one-hot over the
+   corpus's top-N tags, scaled by `tag_weight`, before clustering. This
+   nudges two notes that share tags (even if their prose is dissimilar)
+   toward the same cluster. `tag_weight=0` disables it.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Sequence
 
 import numpy as np
 
-from text_theme_analyzer.pipeline.model import ClusterResult
+from text_theme_analyzer.pipeline.model import ClusterResult, Note, NoteChunk
 
 
 def _safe_import_bertopic():
@@ -32,6 +37,61 @@ def _safe_import_hdbscan():
     return HDBSCAN
 
 
+def build_tag_matrix(
+    notes: Sequence[Note],
+    chunks: Sequence[NoteChunk],
+    *,
+    top_n_tags: int = 20,
+) -> tuple[np.ndarray, list[str]]:
+    """Build an (M, top_n_tags) one-hot tag matrix for a chunk corpus,
+    plus the corpus's top-N tag ordering.
+
+    Returns a tuple `(matrix, tag_columns)`:
+
+    - `matrix` is `np.ndarray`, shape `(M, N)`, dtype `float32`. It is
+      aligned to `chunks` (one row per chunk, in order). Each row's
+      parent note's tags are looked up; 1.0 in any of the top-N global
+      tag positions that note carries, 0.0 elsewhere.
+    - `tag_columns` is a `list[str]` of length `N` in frequency-desc
+      order (ties broken by first-seen order, as `Counter.most_common`
+      does). Column `j` of the matrix corresponds to
+      `tag_columns[j]`. This is the hook for per-tag weight tables
+      (e.g. scaling column `j` by a `tag_weights[tag_columns[j]]`
+      factor): callers can index into the matrix by tag *string* via
+      this list.
+
+    Notes with no tags get an all-zero row — they contribute nothing to
+    the tag component, so the embedding portion drives their cluster
+    assignment. If the corpus has fewer than `top_n_tags` distinct tags,
+    the matrix is narrower (one column per tag). If the corpus has zero
+    tags at all, returns `np.zeros((M, 0), [])`.
+    """
+    # Global tag frequency, sorted desc; take top N.
+    tag_counts: Counter[str] = Counter()
+    for n in notes:
+        tag_counts.update(n.tags)
+    top_tags = [t for t, _ in tag_counts.most_common(top_n_tags)]
+    if not top_tags:
+        # No tags in the corpus: a (M, 0) matrix hstacks to nothing.
+        return np.zeros((len(chunks), 0), dtype=np.float32), []
+
+    tag_index = {t: i for i, t in enumerate(top_tags)}
+    notes_by_id = {n.id: n for n in notes}
+
+    M = len(chunks)
+    N = len(top_tags)
+    mat = np.zeros((M, N), dtype=np.float32)
+    for i, c in enumerate(chunks):
+        note = notes_by_id.get(c.note_id)
+        if note is None:
+            continue
+        for t in note.tags:
+            j = tag_index.get(t)
+            if j is not None:
+                mat[i, j] = 1.0
+    return mat, top_tags
+
+
 def cluster_chunks(
     chunks: Sequence,
     embeddings: np.ndarray,
@@ -41,11 +101,25 @@ def cluster_chunks(
     umap_n_neighbors: int = 15,
     umap_n_components: int = 5,
     n_topics: int | None = None,
+    tag_weight: float = 0.0,
+    top_n_tags: int = 20,
+    tag_matrix: np.ndarray | None = None,
 ) -> ClusterResult:
     """Cluster chunk embeddings into thematic groups.
 
     Returns a `ClusterResult`. The order of `chunks` must match the rows of
     `embeddings`.
+
+    When `tag_weight > 0` and `tag_matrix` is provided (shape `(M, N)` where
+    M == len(chunks)), the effective embedding used for clustering is
+    `np.hstack([embeddings, tag_matrix * tag_weight])`. The `umap_2d`
+    projection that drives the dashboard's bubble map always uses the
+    original embeddings — concatenation would shift the 2D layout in
+    hard-to-interpret ways, and the dashboard map is a navigation aid,
+    not a clustering view.
+
+    `tag_weight=0` (the default) is a no-op: the effective embedding is
+    exactly `embeddings`, so existing behavior is preserved bit-for-bit.
     """
     if len(chunks) == 0 or embeddings.shape[0] == 0:
         return ClusterResult(
@@ -63,6 +137,14 @@ def cluster_chunks(
         min_cluster_size = max(2, min(5, n // 5))
     if min_samples is None:
         min_samples = max(1, min(2, n // 10))
+
+    # Apply tag weighting if requested. The original `embeddings` array
+    # is left untouched — the 2D projection below needs it. (See
+    # docstring for the dashboard-map reasoning.)
+    if tag_weight and tag_weight > 0 and tag_matrix is not None and tag_matrix.shape[0] == n:
+        cluster_embeddings = np.hstack([embeddings, tag_matrix * float(tag_weight)]).astype(np.float32)
+    else:
+        cluster_embeddings = embeddings
 
     UMAP = _safe_import_umap()
     HDBSCAN = _safe_import_hdbscan()
@@ -127,11 +209,11 @@ def cluster_chunks(
         verbose=False,
     )
     docs = [c.text for c in chunks]
-    topics, _ = topic_model.fit_transform(docs, embeddings=embeddings)
+    topics, _ = topic_model.fit_transform(docs, embeddings=cluster_embeddings)
 
     # reduce_outliers reassigns ambiguous points using embeddings + c-TF-IDF.
     try:
-        new_topics = topic_model.reduce_outliers(docs, topics, strategy="embeddings", embeddings=embeddings)
+        new_topics = topic_model.reduce_outliers(docs, topics, strategy="embeddings", embeddings=cluster_embeddings)
         topic_model.update_topics(docs, topics=new_topics, vectorizer_model=vectorizer)
         topics = new_topics
     except Exception:

@@ -1,0 +1,50 @@
+{
+  // Workspace settings for text-theme-analyzer.
+  // Committed so anyone who opens this folder in VS Code gets a
+  // working Python + ruff setup without manual config. The .vscode/
+  // directory is otherwise .gitignored (see .gitignore negation
+  // rules for these two specific files).
+  //
+  // Settings follow the README's "Development" section:
+  //   - .venv\Scripts\python.exe as the interpreter
+  //   - ruff as the default Python formatter / linter
+  //   - pytest via the test runner UI
+  //   - PYTHONPATH=src because the package is src/-layout
+  "python.defaultInterpreterPath": ".venv\\Scripts\\python.exe",
+  "python.analysis.autoSearchPaths": true,
+  "python.analysis.extraPaths": ["src"],
+
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+
+  "ruff.lint.args": ["--config", "pyproject.toml"],
+
+  // pytest: the suite is invoked as `pytest -q` per the README.
+  // - "testing.untestedTestFramework" suppressed because heavy-deps
+  //   tests are gated with pytest.importorskip and report as
+  //   "skipped" rather than "untested".
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": ["-q", "tests"],
+  "python.testing.unittestEnabled": false,
+
+  // Files: trim trailing whitespace on save in markdown too (handy
+  // for the project docs), and exclude generated / cached dirs from
+  // the file watcher so the analyzer runs on a clean tree.
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.watcherExclude": {
+    "**/.venv/**": true,
+    "**/__pycache__/**": true,
+    "**/.pytest_cache/**": true,
+    "**/.ruff_cache/**": true,
+    "**/text-theme-output/**": true,
+    "**/text-theme-output-llm/**": true,
+    "**/out/**": true
+  }
+}

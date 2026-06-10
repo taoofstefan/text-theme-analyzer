@@ -73,6 +73,28 @@
     .pill-severity-strong { background: rgba(240, 168, 104, 0.25); color: var(--warn); border: 1px solid var(--warn); }
     .pill-severity-medium { background: rgba(110, 193, 255, 0.15); color: var(--accent); }
     .pill-severity-weak { background: rgba(138, 148, 166, 0.15); color: var(--muted); }
+    /* Promote-to-project affordance: copies a `tta promote <key>` command
+       to the clipboard. Static HTML, no backend — the CLI does the work. */
+    .btn {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-size: 0.82em;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid var(--good);
+      background: rgba(110, 196, 122, 0.12);
+      color: var(--good);
+      font-family: inherit;
+      line-height: 1.4;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn:hover, .btn:focus { background: rgba(110, 196, 122, 0.28); outline: none; }
+    .btn[data-copied="true"] {
+      background: var(--good);
+      color: var(--bg);
+      border-color: var(--good);
+    }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     .card {
       background: var(--panel-2);
@@ -224,8 +246,8 @@
     <section id="stale">
       <h2>Stale-but-recurring</h2>
       <p class="muted">Clusters that used to recur but have gone quiet in the recent window. Severity ladder: <span class="pill pill-severity-strong">strong</span> = frequent, long-quiet topic worth revisiting; <span class="pill pill-severity-medium">medium</span> = recurred then stopped; <span class="pill pill-severity-weak">weak</span> = low-frequency, extended silence.</p>
-      <table>
-        <tr><th>Cluster</th><th>First seen</th><th>Last seen</th><th>Frequency</th><th>Severity</th><th>Quiet (buckets)</th><th>Verdict</th></tr>
+      <table data-output-dir="{{ meta.output_dir }}">
+        <tr><th>Cluster</th><th>First seen</th><th>Last seen</th><th>Frequency</th><th>Severity</th><th>Quiet (buckets)</th><th>Verdict</th><th>Promote</th></tr>
         {% for s in stale_mechanical %}
           <tr>
             <td>{{ s.label }}</td>
@@ -241,6 +263,14 @@
                 <span class="pill pill-{{ s.verdict_class }}">{{ s.verdict }}</span>
               {% else %}
                 <span class="muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if s.verdict == "promote_to_project" %}
+                <button type="button"
+                        class="btn btn-promote"
+                        data-promote-key="{{ s.promote_key }}"
+                        title="Copy `tta promote {{ s.promote_key }}` to clipboard">Copy command</button>
               {% endif %}
             </td>
           </tr>
@@ -359,6 +389,38 @@
           }
         });
       }
+
+      // Promote-to-project: copy a `tta promote <key>` command to the
+      // clipboard on click. The CLI does the actual write — the button
+      // is purely a UX affordance.
+      const promoteButtons = document.querySelectorAll(".btn-promote");
+      const staleTable = document.querySelector("#stale table");
+      const outDir = staleTable ? (staleTable.getAttribute("data-output-dir") || ".") : ".";
+      promoteButtons.forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const key = btn.getAttribute("data-promote-key") || "";
+          const cmd = `tta promote ${key} --from-run ${outDir}`;
+          const original = btn.textContent;
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(cmd);
+            } else {
+              // Fallback for browsers without the Clipboard API: surface
+              // the command in a prompt the user can copy manually.
+              window.prompt("Copy this command:", cmd);
+              return;
+            }
+            btn.textContent = "Copied ✓";
+            btn.setAttribute("data-copied", "true");
+            setTimeout(() => {
+              btn.textContent = original;
+              btn.removeAttribute("data-copied");
+            }, 2000);
+          } catch (e) {
+            window.prompt("Copy this command:", cmd);
+          }
+        });
+      });
     })();
   </script>
 </body>

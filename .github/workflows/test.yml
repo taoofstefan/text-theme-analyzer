@@ -1,0 +1,61 @@
+name: Tests
+
+# Run the pytest suite on every push to main and on every PR. Mirrors
+# what the developer runs locally:
+#   pip install -e .[dev]
+#   PYTHONPATH=src pytest -q
+# also runs `ruff check` so the lint contract is enforced in CI even
+# before the local pre-commit hook is installed.
+#
+# Companion workflow: secret-scan.yml (gitleaks). Kept as a separate
+# job so a gitleaks ruleset tweak can't accidentally turn the test
+# status red.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: pytest + ruff (Python ${{ matrix.python-version }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          # Caches the pip download for requirements declared in
+          # pyproject.toml. Speeds up subsequent runs from ~60s to ~15s.
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package + dev extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Lint with ruff
+        run: ruff check src tests
+
+      - name: Run pytest
+        # PYTHONPATH=src matches the README's local invocation. The
+        # src/-layout package is not on sys.path by default in CI
+        # because we never import-install it (only `pip install -e`).
+        env:
+          PYTHONPATH: src
+        run: pytest -q

@@ -87,6 +87,8 @@ python -m text_theme_analyzer analyze [OPTIONS] INPUT_PATH
 | `--top-n-quotes` | Strong quotes per cluster (default 5) |
 | `--min-cluster-size` | HDBSCAN `min_cluster_size` override. Default uses a corpus-size heuristic. Lower = more, smaller clusters. Higher = fewer, larger clusters. |
 | `--umap-n-neighbors` | UMAP `n_neighbors` for the clustering projection. Lower = more local structure, more clusters. Higher = more global, fewer clusters. |
+| `--tag-weight` | Tag-weighted clustering weight (T1.1, default `0.0` = off). When `> 0`, concatenates a one-hot over the corpus's top-N tags to each chunk's embedding, scaled by this weight, before clustering. 0.3-0.5 is a reasonable starting point for personal-vault corpora. |
+| `--top-n-tags` | Cap on the global tag vocabulary used for tag-weighted clustering and the LLM tag-distribution prompt (T1.1, default `20`). |
 | `--spike-window-weeks` | Rolling window for spike detection (default 8) |
 | `--stale-window-weeks` | Recent-quiet threshold for stale ideas (default 8) |
 | `--no-llm` | Skip LLM enrichment (fast, deterministic) |
@@ -94,6 +96,87 @@ python -m text_theme_analyzer analyze [OPTIONS] INPUT_PATH
 | `--cache-dir` | Where embeddings are cached (default `~/.cache/text-theme-analyzer`) |
 | `--config` | Path to a YAML config file (auto-discovered otherwise) |
 | `-v, --verbose` / `-q, --quiet` | Logging knobs |
+
+## Promote to project (T1.2)
+
+When the LLM returns a `promote_to_project` verdict on a stale cluster,
+it copies a `tta promote <promote_key> ...` invocation to the clipboard.
+Pasting and running that command writes a pre-filled project stub to a
+markdown file you control.
+
+```bash
+# Default target: ./promoted-projects.md (overridable in YAML).
+# Default source: most recent run in ./text-theme-output.
+tta promote 12:2026-04-15
+
+# Override the source run or target file from the CLI.
+tta promote 12:2026-04-15 --from-run ./runs/2026-06-10
+tta promote 12:2026-04-15 --target-file ./projects/agency.md
+```
+
+The target file is a flat list of `## ` buckets (e.g. `## Promoted`),
+each containing one or more `### ` project stubs. Re-running
+`tta promote` for the same `promote_key` replaces that stub in place;
+a new key appends. This is the design's idempotency guarantee.
+
+```yaml
+# text-theme-analyzer.yml — promote config
+promote:
+  target_file: ./promoted-projects.md
+  # Optional Kanban-style buckets. The first entry is the default
+  # landing bucket; pass --section to override per-invocation.
+  sections:
+    - To start
+    - In progress
+    - Archive
+```
+
+The output is plain markdown — standard `[text](path)` links, no
+`[[wikilinks]]`, no plugin-specific syntax. The Obsidian Kanban plugin
+will render the `## ` buckets as columns for free, but no Obsidian
+install is required to read or write the file.
+
+## Multi-run diff (T1.3)
+
+Every `analyze` run writes a snapshot to `{output_dir}/run-history/{ISO-timestamp}.json`.
+`tta diff` compares two of them and shows what changed between runs.
+
+```bash
+# Text diff to stdout.
+tta diff 2026-06-01T10-00-00Z 2026-06-10T10-00-00Z
+
+# Also write a 2-column side-by-side HTML dashboard.
+tta diff 2026-06-01T10-00-00Z 2026-06-10T10-00-00Z --html ./runs/diff.html
+
+# Stricter matching (default 0.3). Higher = fewer matches.
+tta diff OLD NEW --match-threshold 0.5
+```
+
+The text diff reports clusters that were **added** (no match in old),
+**removed** (no match in new), **grew** / **shrank** (matched pair
+with size delta), and **stable** (matched pair, same size). It
+also reports new and dropped top keyphrases, plus spike and stale
+deltas.
+
+The HTML dashboard is a self-contained static page with a summary
+block, a matched-pairs table (one row per matched pair, columns:
+similarity, old cluster, new cluster, size delta, verdict pill),
+and separate sections for added and removed clusters. No JS, no
+external CSS, safe to email.
+
+**How matching works:** clusters are matched by IDF-weighted
+cosine similarity of their top-8 c-TF-IDF keywords (the snapshot's
+`cluster_fingerprints` field). BERTopic reassigns cluster IDs per
+run, so matching by raw `cid` would report every cluster as
+added+removed; the fingerprint catches the actual theme identity.
+Below `--match-threshold` (default `0.3`), a pair is considered
+"not the same theme" and the new cluster is `added` (or the old
+is `removed`).
+
+Pre-T1.3 snapshots (without the `cluster_fingerprints` field) fall
+back to raw-ID matching, so old runs and old diffs keep working.
+
+Use `tta runs` to list available snapshot timestamps.
 
 ## Config file (optional)
 
@@ -113,6 +196,12 @@ output_dir: ./reports
 top_n_themes: 20
 spike_window_weeks: 8
 stale_window_weeks: 8
+promote:
+  target_file: ./promoted-projects.md
+  sections:
+    - To start
+    - In progress
+    - Archive
 exclude:
   - "**/_archive/**"
   - "**/templates/**"
@@ -147,6 +236,12 @@ tags: [ai, agents, workflow]    # list or comma-separated string
 Date resolution priority: frontmatter `date` → `created` → `published` →
 filename regex `YYYY-MM-DD` → file mtime → `None` (note is still
 clustered but excluded from time-series).
+
+The `tags` list (frontmatter and/or inline `#tag`) feeds the LLM
+enrichment prompt as a per-cluster tag distribution. With
+`--tag-weight > 0`, the same tags also nudge clustering: two notes
+that share tags get pulled toward the same cluster even when their
+prose is dissimilar. `0.0` (the default) keeps the pre-T1.1 behavior.
 
 ## CSV input
 
@@ -243,15 +338,30 @@ even if you skip the M2 stack (sentence-transformers, BERTopic, etc.).
 ## Development
 
 ```bash
-# Install with dev extras
+# Install with dev extras (pulls in ruff + pytest-cov)
 pip install -e .[dev]
 
 # Lint
 ruff check src\ tests\
+# Auto-format
+ruff format src\ tests\
 
 # Type-check (optional)
 mypy src\
 ```
+
+### Pre-commit hooks
+
+A `.pre-commit-config.yaml` runs `ruff check --fix`, `ruff format`, and
+`gitleaks` on every commit — same checks as the CI workflows, but as
+local feedback. One-time setup:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Run on the whole tree without committing: `pre-commit run --all-files`.
 
 ## What you get
 

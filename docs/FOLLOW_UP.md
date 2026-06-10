@@ -101,6 +101,15 @@ stale-detection features.
 
 ### T1.1 — Tag-weighted clustering and LLM prompt
 
+> **DONE** (T1.1 implementation). New CLI flags: `--tag-weight FLOAT`
+> (default `0.0` = off) and `--top-n-tags INT` (default `20`). The
+> per-cluster tag distribution is also passed to the LLM in the
+> enrichment prompt; the system prompt now asks the model to prefer
+> the user's existing tag vocabulary when naming clusters.
+> Implementation: `pipeline/clustering.py::build_tag_matrix`,
+> `llm/enrichment.py::_cluster_tags`. Tests in
+> `tests/test_t11_tag_weighted.py` (14 tests).
+
 Right now clusters are formed purely by embedding similarity, and the
 LLM enrichment bundle has no tag information. If notes are tagged
 (`#consulting`, `#game-design`, `#self-reflection`, `#berichteki`,
@@ -120,7 +129,70 @@ overlap before clustering.
 
 **Highest leverage change for the current user's day-to-day use.**
 
+### T1.1a — Reconcile the tag-string vs. tag-matrix design split
+
+> **DONE** (T1.1a implementation). `build_tag_matrix` now returns
+> `tuple[np.ndarray, list[str]]` — the matrix plus the corpus's
+> top-N tag ordering in frequency-desc order (the string→column
+> map). The orchestrator unpacks the tuple; the `tag_columns` list
+> is captured but unused today, with a comment marking it as the
+> future per-tag-weight hook. The dead `mid.metadata["tag_matrix"]`
+> stash is gone (it was never read by `_cluster_tags`; removing it
+> shrinks the JSON artifact by ~16KB on a 205-chunk corpus with 20
+> tags). Tests in `tests/test_t11_tag_weighted.py` cover the new
+> shape (frequency order, dedup, columns/width invariant, alignment
+> to matrix indices, empty-corpus fallback). 156/156 tests green.
+
+> **TODO** (flagged at end of T1.1a implementation). The
+> `build_tag_matrix` signature is now ready for per-tag weights,
+> but we don't expose a way to set them. The next step is a
+> `tag_weights: dict[str, float]` config (YAML map under
+> `tag_weights:`), plumbed through `Config` and applied in
+> `cluster_chunks` as a per-column scale on the tag contribution
+> (`tag_matrix[:, j] * tag_weights[tag_columns[j]]`). Revisit
+> when the user actually has differential weight requirements;
+> the current corpus is flat.
+
+**File pointers** (for whoever picks T1.1b up):
+- `src/text_theme_analyzer/pipeline/clustering.py:build_tag_matrix`
+  (the tuple-return contract; tag_columns is the string→index map)
+- `src/text_theme_analyzer/pipeline/clustering.py:cluster_chunks`
+  (the `np.hstack([embeddings, tag_matrix * tag_weight])` line —
+  the per-column scale goes here)
+- `src/text_theme_analyzer/pipeline/orchestrator.py:run` (the
+  `tag_matrix, _tag_columns = build_tag_matrix(...)` call; replace
+  the `_` with `tag_columns` and pass to a new config field)
+- `src/text_theme_analyzer/config.py` (add a `tag_weights: dict[str, float]`
+  field; YAML override branch mirroring the `ollama` /
+  `promote` blocks)
+
 ### T1.2 — A "promote to project" action on stale verdicts
+
+> **DONE** (T1.2 implementation). The dashboard's stale-but-recurring
+> table now renders a **Copy command** button next to every
+> `promote_to_project` verdict. Clicking it copies a `tta promote
+> <promote_key> --from-run <output-dir>` invocation to the clipboard
+> with a 2-second "Copied ✓" confirmation. Running the command
+> writes a pre-filled project stub to `promote.target_file`
+> (default: `./promoted-projects.md` next to the input folder).
+>
+> Re-promoting the same `promote_key` replaces the existing stub
+> in place via an invisible `<!-- promote_key: ... -->` HTML
+> comment marker (no wikilinks, no frontmatter, no Obsidian
+> assumptions). The file structure is `## <bucket>` → `### <project
+> title>` → body with marker + reasoning + supporting notes.
+> Configurable via `promote.target_file` and `promote.sections` in
+> `text-theme-analyzer.yml`. CLI: `tta promote <key> [--from-run
+> PATH] [--output-dir PATH] [--target-file PATH] [--section TEXT]`.
+>
+> Implementation: `output/promote.py::render_promote_stub` +
+> `output/promote.py::apply_promotion`; `cli.py::promote_cmd`;
+> `llm/enrichment.py::build_bundle` (adds `promote_key` per cluster);
+> `output/json_report.py::_build_promote_keys` (top-level
+> `promote_keys` map for the CLI to consume);
+> `output/html_dashboard.py::render_html` (button + JS clipboard
+> handler); `output/templates/dashboard.html.j2` (CSS + button +
+> JS). Tests: `tests/test_t12_promote.py` (26 tests).
 
 The model already produces `stale_recurring` verdicts with a
 `Literal["promote_to_project", "archive", "keep_observing"]` field
@@ -140,25 +212,105 @@ This is blocked on a design decision — **where do promoted projects
 live?** — which the user has to make before any of this is
 implementable. Worth a 10-minute conversation.
 
+**Design rule (must hold for any implementation): vault-agnostic.**
+The promote action must not assume Obsidian. Obsidian-specific
+features — Kanban plugin rendering, `[[wikilinks]]`, the `.obsidian/`
+config directory, the vault's `00 Inbox/` convention — are *free
+upgrades* for users who happen to use Obsidian, not requirements
+for the tool to work. Concretely: the dashboard writes standard
+markdown to a path the user configures (`promote.target_file` in
+`text-theme-analyzer.yml`, defaulting to a `promoted-projects.md`
+next to the input folder); optional `promote.sections` headings
+(letting the user set up a Kanban-style column structure) are
+plain `## ` headings, no plugin needed to *write* to them. Any
+links to source notes use standard markdown link syntax
+(`[excerpt](path/to/source.md)`), not `[[wikilinks]]`. The
+Obsidian Kanban plugin will render the headings as columns for
+free; a non-Obsidian user gets a normal markdown file in any
+editor.
+
+### T1.2a — Smarter section routing for promote stubs
+
+> **TODO** (flagged at end of T1.2 implementation). The current
+> default routes every new stub to `promote.sections[0]` (or
+> `## Promoted` if no sections are configured). That's fine for a
+> single-bucket Kanban but is opinionated when the user has set
+> up multiple buckets ("To start" / "In progress" / "Archive").
+
+Today the choice is "always land in the first bucket" — the user
+moves entries manually in any markdown editor. That's a defensible
+default (it matches the vault-agnostic spirit of "let the user
+decide"), but it means a `tta promote` invocation never lands in
+"In progress" or "Archive" by itself.
+
+Two reasonable extensions, in order of effort:
+
+1. **`--section` is per-invocation today (CLI override).** Wire it
+   into a per-cluster override too: a `target_section` field on the
+   `StaleVerdict` schema, with the LLM picking a section name from
+   `promote.sections` (and falling back to `sections[0]` if it
+   can't decide). The cost is a small schema change + LLM prompt
+   nudge; the benefit is "I clicked Copy → ran the command → the
+   stub landed in the right column without me touching it."
+
+2. **Deterministic severity-based heuristic.** When `sections` is
+   non-empty, route by `StaleIdea.severity`:
+   - `strong` → `sections[0]` (the "To start" equivalent)
+   - `medium` → `sections[0]`
+   - `weak` → `sections[-1]` (the "Archive" equivalent)
+   No LLM call, but opinionated. Useful as a stepping-stone
+   before option 1.
+
+**When to revisit**: the moment a user complains "I have to move
+half my promotes by hand" or "the archive bucket is full of stuff
+that's still alive". Not a real user request yet.
+
+**File pointers**:
+- `src/text_theme_analyzer/output/promote.py::_select_bucket_heading`
+- `src/text_theme_analyzer/llm/schemas.py::StaleVerdict` (option 1)
+- `src/text_theme_analyzer/pipeline/model.py::StaleIdea.severity`
+  (option 2)
+
 ### T1.3 — Multi-run diff
 
-The CLI has a `runs` subcommand stub (visible in the glob-recovery
-test's argv repair logic), but it doesn't currently do meaningful
-diff between runs. Running on the same vault a month apart and
-seeing *what changed* — new clusters, clusters that grew, clusters
-that went quiet — is the actual long-term value of having a
-thinking radar at all.
-
-Implementation sketch: the analyzer already writes a snapshot
-to `{output_dir}/run-history/{timestamp}.json` on every run.
-Add a `tta diff <run_a> <run_b>` subcommand that:
-
-- Matches clusters between runs by cosine similarity of their
-  c-TF-IDF centroids.
-- Reports: new clusters, removed clusters, grew-since-last-run,
-  shrank-since-last-run, stable.
-- Optionally renders a 2-column dashboard with the two runs side
-  by side.
+> **DONE** (T1.3 implementation). `tta diff OLD NEW` now matches
+> clusters across runs by IDF-weighted cosine similarity of their
+> top-8 c-TF-IDF keywords (the new `cluster_fingerprints` field on
+> `RunSnapshot`). The `Diff` dataclass gains a `stable_clusters`
+> category and a `matched_pairs` list; `render_diff` adds a
+> "stable:" line and a "Matched: N (avg similarity 0.XX)" line.
+> Pre-T1.3 snapshots (no `cluster_fingerprints`) fall back to the
+> old raw-ID matching, so old runs and old diffs keep working.
+> Schema is additive (`HISTORY_SCHEMA_VERSION` stays at `1.0`).
+>
+> New `--html PATH` flag on `tta diff` writes a self-contained
+> 2-column side-by-side dashboard (`output/diff_dashboard.py` +
+> `output/templates/diff_dashboard.html.j2`). The "2-column" is
+> the matched-pairs table — not two literal dashboards side by
+> side. Static HTML, no JS, no external CSS, XSS-safe via
+> Jinja `autoescape=True`.
+>
+> New `--match-threshold FLOAT` option (default `0.3`) controls
+> the cosine-similarity cutoff. Lower = more aggressive
+> matching; higher = stricter. Range 0.0-1.0.
+>
+> Tests: 19 new in `tests/test_history.py` (fingerprint field,
+> round-trip, ID/IDF, similarity, matching, stable category,
+> threshold knob, backwards compat with old snapshots), 12 new
+> in `tests/test_diff_dashboard.py` (HTML self-containment,
+> matched/added/removed/keyphrase sections, summary block, XSS
+> escape, CLI wiring for `--html` / `--match-threshold` /
+> unknown-snapshot errors). 185/185 tests green.
+>
+> **File pointers** (for whoever picks T1.3 follow-ups up):
+> - `src/text_theme_analyzer/output/history.py:_match_clusters`
+>   (greedy + symmetric match; raw-ID fallback for old snapshots)
+> - `src/text_theme_analyzer/output/history.py:_idf_from_runs`
+>   (smoothed IDF over the union of fingerprints)
+> - `src/text_theme_analyzer/output/diff_dashboard.py:render_diff_html`
+> - `src/text_theme_analyzer/output/templates/diff_dashboard.html.j2`
+> - `src/text_theme_analyzer/cli.py:diff_runs` (the updated
+>   subcommand with `--html` and `--match-threshold`)
 
 ---
 

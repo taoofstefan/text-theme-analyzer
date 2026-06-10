@@ -6,6 +6,7 @@ M2+ adds: --no-llm flag, --output json,html,cli; LLM enrichment.
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from datetime import date
@@ -58,6 +59,8 @@ def _build_config(
     no_merge_contained_phrases: bool,
     min_cluster_size: int | None,
     umap_n_neighbors: int | None,
+    tag_weight: float,
+    top_n_tags: int,
     no_llm: bool,
     dry_run: bool,
     cache_dir: Path,
@@ -119,6 +122,10 @@ def _build_config(
         config.min_cluster_size = min_cluster_size
     if "umap_n_neighbors" in cli_passed:
         config.umap_n_neighbors = umap_n_neighbors
+    if "tag_weight" in cli_passed:
+        config.tag_weight = tag_weight
+    if "top_n_tags" in cli_passed:
+        config.top_n_tags = top_n_tags
     if "no_llm" in cli_passed:
         config.no_llm = no_llm
     if "dry_run" in cli_passed:
@@ -351,6 +358,15 @@ main.main = _patched_main  # type: ignore[method-assign]
 @click.option("--umap-n-neighbors", type=int, default=None, callback=_record_passed,
               help="UMAP n_neighbors override for the clustering projection. "
                    "Lower = more local structure, more clusters. Higher = more global, fewer clusters.")
+@click.option("--tag-weight", type=float, default=0.0, show_default=True, callback=_record_passed,
+              help="Tag-weighted clustering weight (T1.1). 0.0 disables it (default). "
+                   "Values >0 concatenate a one-hot over the corpus's top-N tags to each chunk's "
+                   "embedding before clustering, scaled by this weight. 0.3-0.5 is a reasonable "
+                   "starting point for personal-vault corpora.")
+@click.option("--top-n-tags", type=int, default=20, show_default=True, callback=_record_passed,
+              help="Cap on the global tag vocabulary used for tag-weighted clustering and the LLM "
+                   "tag-distribution prompt (T1.1). The top-N most-frequent tags in the corpus are "
+                   "retained; the rest are dropped.")
 @click.option("--no-llm", is_flag=True, help="Skip LLM enrichment (M1 default behavior).", callback=_record_passed)
 @click.option("--dry-run", is_flag=True, help="Run ingest + clustering, then print a preview (LLM bundle size estimate) and exit. No LLM call, no output files written.", callback=_record_passed)
 @click.option("--cache-dir", type=Path, default=None, callback=_record_passed)
@@ -375,6 +391,8 @@ def analyze(
     no_merge_contained_phrases: bool,
     min_cluster_size: int | None,
     umap_n_neighbors: int | None,
+    tag_weight: float,
+    top_n_tags: int,
     no_llm: bool,
     dry_run: bool,
     cache_dir: Path | None,
@@ -408,6 +426,8 @@ def analyze(
         no_merge_contained_phrases=no_merge_contained_phrases,
         min_cluster_size=min_cluster_size,
         umap_n_neighbors=umap_n_neighbors,
+        tag_weight=tag_weight,
+        top_n_tags=top_n_tags,
         no_llm=no_llm,
         dry_run=dry_run,
         cache_dir=cache_dir or Path.home() / ".cache" / "text-theme-analyzer",
@@ -476,15 +496,36 @@ def analyze(
     "--output-dir", type=Path, default=Path("./text-theme-output"), show_default=True,
     help="Where to find the run-history/ directory.",
 )
-def diff_runs(old: str, new: str, output_dir: Path) -> None:
+@click.option(
+    "--html", "html_out", type=Path, default=None,
+    help="Also write a 2-column HTML dashboard to this path (in addition to the text diff on stdout).",
+)
+@click.option(
+    "--match-threshold", type=float, default=0.3, show_default=True,
+    help="Cosine-similarity threshold for matching clusters across runs. "
+         "Pairs below this are treated as 'not the same theme' (added / removed). "
+         "Lower = more aggressive matching; higher = stricter. Range 0.0-1.0.",
+)
+def diff_runs(
+    old: str, new: str, output_dir: Path,
+    html_out: Path | None, match_threshold: float,
+) -> None:
     """Diff two runs of the analyzer.
 
     OLD_TIMESTAMP and NEW_TIMESTAMP are filename stems under
     ``{output_dir}/run-history/`` (the part before ``.json``, e.g.
-    ``2026-06-07T19:42:11Z``). Use ``tta runs`` to list available snapshots.
+    ``2026-06-07T19-42-11Z``). Use ``tta runs`` to list available snapshots.
+
+    The text diff is always printed to stdout. Pass ``--html PATH`` to
+    also write a self-contained side-by-side HTML dashboard.
+
+    Clusters are matched between runs by IDF-weighted cosine similarity
+    of their top-8 c-TF-IDF keywords (the fingerprint stored in each
+    snapshot). See ``output/history.py::_match_clusters``.
     """
     from text_theme_analyzer.output.history import (
-        HISTORY_DIRNAME, diff_snapshots, list_snapshots, load_snapshot, render_diff,
+        HISTORY_DIRNAME, DEFAULT_MATCH_THRESHOLD, diff_snapshots, list_snapshots,
+        load_snapshot, render_diff,
     )
     history_dir = output_dir / HISTORY_DIRNAME
     old_path = history_dir / f"{old}.json"
@@ -503,7 +544,17 @@ def diff_runs(old: str, new: str, output_dir: Path) -> None:
         )
     old_snap = load_snapshot(old_path)
     new_snap = load_snapshot(new_path)
-    click.echo(render_diff(diff_snapshots(old_snap, new_snap), old=old_snap, new=new_snap))
+    diff = diff_snapshots(old_snap, new_snap, threshold=match_threshold)
+    click.echo(render_diff(diff, old=old_snap, new=new_snap))
+
+    if html_out is not None:
+        from text_theme_analyzer.output.diff_dashboard import render_diff_html
+        html_out.parent.mkdir(parents=True, exist_ok=True)
+        html_out.write_text(
+            render_diff_html(diff, old=old_snap, new=new_snap),
+            encoding="utf-8",
+        )
+        click.echo(f"wrote {html_out}", err=True)
 
 
 @main.command("runs")
@@ -519,6 +570,144 @@ def list_runs(output_dir: Path) -> None:
         return
     for p in paths:
         click.echo(p.stem)
+
+
+@main.command("promote")
+@click.argument("promote_key", metavar="PROMOTE_KEY")
+@click.option(
+    "--from-run", "from_run", type=Path, default=None,
+    help="Path to a run output dir (containing themes.json). Default: most recent in --output-dir.",
+)
+@click.option(
+    "--output-dir", type=Path, default=Path("./text-theme-output"), show_default=True,
+    help="Where to look for the most recent run when --from-run is not given.",
+)
+@click.option(
+    "--target-file", "target_file", type=Path, default=None,
+    help="Override the target markdown file (default: promote.target_file in config).",
+)
+@click.option(
+    "--section", "section", default=None,
+    help="Override which `## ` heading the stub is appended under (default: the first entry in promote.sections, or 'Promoted').",
+)
+@click.option("--config", "config_path", type=Path, default=None)
+def promote_cmd(
+    promote_key: str,
+    from_run: Path | None,
+    output_dir: Path,
+    target_file: Path | None,
+    section: str | None,
+    config_path: Path | None,
+) -> None:
+    """Promote a stale-recurring verdict to a project plan file.
+
+    PROMOTE_KEY is the value shown in the dashboard's "Copy command"
+    button (format: ``<cluster_id>:<last_seen>``). The verdict is
+    looked up in ``{from_run}/themes.json``; the project stub is
+    appended (or replaced) in the configured target file.
+    """
+    from text_theme_analyzer.output.promote import (
+        ClusterContext,
+        apply_promotion,
+        render_promote_stub,
+    )
+
+    # Load config (for promote.target_file + promote.sections defaults).
+    # Mirrors the layering in _build_config(): defaults < YAML < env.
+    # The promote subcommand has no `--quiet` / `--verbose` / `--no-llm` /
+    # etc. options of its own, so we just need the config object, not the
+    # full _build_config pipeline.
+    load_dotenv()
+    yaml_path = config_path or find_config_file()
+    config = Config()
+    if yaml_path:
+        apply_yaml_overrides(config, load_yaml_config(yaml_path))
+    apply_env_overrides(config)
+
+    # Resolve --from-run: explicit > most recent in --output-dir.
+    run_dir = from_run
+    if run_dir is None:
+        run_dir = _latest_run_dir(output_dir)
+        if run_dir is None:
+            raise click.UsageError(
+                f"No run found in {output_dir}. Re-run the analyzer with an LLM, or pass --from-run."
+            )
+    themes_json = run_dir / "themes.json"
+    if not themes_json.is_file():
+        raise click.UsageError(
+            f"themes.json not found at {themes_json}. Pass --from-run pointing at a run output dir."
+        )
+
+    data = json.loads(themes_json.read_text(encoding="utf-8"))
+    promote_keys = data.get("promote_keys") or {}
+    if promote_key not in promote_keys:
+        available = ", ".join(list(promote_keys.keys())[:5]) or "(none)"
+        raise click.UsageError(
+            f"promote_key {promote_key!r} not found in {themes_json}. Available: {available}"
+        )
+
+    record = promote_keys[promote_key]
+    if record.get("verdict") != "promote_to_project":
+        raise click.UsageError(
+            f"Verdict for {promote_key!r} is {record.get('verdict')!r}, not 'promote_to_project'. "
+            "Only promote_to_project verdicts can be promoted."
+        )
+
+    # Resolve representative-note references into (date, title, path) tuples
+    # for the "Supporting notes" section of the stub.
+    files_by_id = {f["id"]: f for f in (data.get("files") or [])}
+    rep_notes: list[tuple[str, str | None, str, str]] = []
+    for nid in record.get("representative_note_ids") or []:
+        f = files_by_id.get(nid)
+        if f is None:
+            continue
+        rep_notes.append((nid, f.get("date"), f.get("title", nid), f.get("path", nid)))
+
+    context = ClusterContext(
+        cluster_id=int(record["cluster_id"]),
+        theme=record["theme"],
+        reasoning=record["reasoning"],
+        last_seen=record.get("last_seen"),
+        first_seen=record.get("first_seen"),
+        frequency=record.get("frequency"),
+        severity=record.get("severity"),
+        keywords=list(record.get("keywords") or []),
+        representative_notes=rep_notes,
+    )
+
+    stub = render_promote_stub(promote_key, context)
+
+    # Resolve target file + section. CLI flags override config.
+    target = target_file or config.promote.target_file
+    target_section = section
+    if target_section is None and config.promote.sections:
+        target_section = config.promote.sections[0]
+
+    apply_promotion(
+        target_path=target,
+        stub=stub,
+        promote_key=promote_key,
+        target_section=target_section,
+    )
+
+    click.echo(f"[promote] wrote {target} ({promote_key})", err=True)
+
+
+def _latest_run_dir(output_dir: Path) -> Path | None:
+    """Find the most recent run directory under ``output_dir``.
+
+    A run dir is anything directly under ``output_dir`` that contains
+    a ``themes.json``. We sort by mtime descending. The check for
+    ``themes.json`` (not just any dir) avoids picking up unrelated
+    subdirs (``run-history/`` is excluded by this — it has snapshots,
+    not themes.json).
+    """
+    if not output_dir.is_dir():
+        return None
+    candidates = [p for p in output_dir.iterdir() if p.is_dir() and (p / "themes.json").is_file()]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
 if __name__ == "__main__":

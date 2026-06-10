@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Run diff — {{ old_timestamp }} → {{ new_timestamp }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #181b22;
+      --panel-2: #1f242d;
+      --border: #2a3038;
+      --text: #e6e8eb;
+      --muted: #8a94a6;
+      --accent: #6ec1ff;
+      --good: #6ec47a;
+      --warn: #f0a868;
+      --bad: #e87b7b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+      line-height: 1.5;
+    }
+    header {
+      padding: 24px 32px;
+      background: linear-gradient(180deg, var(--panel) 0%, var(--bg) 100%);
+      border-bottom: 1px solid var(--border);
+    }
+    h1 { margin: 0 0 4px 0; font-size: 1.5em; }
+    .subtitle { color: var(--muted); font-size: 0.9em; }
+    .headline {
+      margin-top: 12px;
+      padding: 10px 14px;
+      background: var(--panel-2);
+      border-left: 3px solid var(--accent);
+      border-radius: 4px;
+      font-size: 0.95em;
+    }
+    main { padding: 24px 32px; max-width: 1200px; margin: 0 auto; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 24px;
+    }
+    h2 {
+      margin-top: 0;
+      font-size: 1.15em;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+    h3 { margin-top: 1.4em; font-size: 1.0em; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      text-align: left;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-weight: 500; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.04em; }
+    td { font-size: 0.95em; }
+    tr:hover td { background: var(--panel-2); }
+    .muted { color: var(--muted); }
+    .cid { color: var(--muted); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.9em; }
+    .label { color: var(--text); }
+    .size { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+    /* Verdict pills (grew / shrank / stable). */
+    .verdict-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.85em;
+      font-weight: 500;
+    }
+    .verdict-grew { background: rgba(110, 196, 122, 0.18); color: var(--good); }
+    .verdict-shrank { background: rgba(232, 123, 123, 0.18); color: var(--bad); }
+    .verdict-stable { background: rgba(110, 193, 255, 0.18); color: var(--accent); }
+    .sim {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      color: var(--accent);
+    }
+    .delta-pos { color: var(--good); }
+    .delta-neg { color: var(--bad); }
+    .delta-zero { color: var(--muted); }
+    .fingerprint { color: var(--muted); font-size: 0.85em; }
+    ul.kp-list { margin: 0; padding-left: 18px; }
+    ul.kp-list li { margin: 2px 0; }
+    .empty { color: var(--muted); font-style: italic; }
+    .summary-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .summary-cell {
+      background: var(--panel-2);
+      border-radius: 6px;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+    }
+    .summary-cell .label-sm {
+      color: var(--muted);
+      font-size: 0.75em;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .summary-cell .value {
+      font-size: 1.3em;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      margin-top: 2px;
+    }
+    .summary-cell.delta .value.delta-pos { color: var(--good); }
+    .summary-cell.delta .value.delta-neg { color: var(--bad); }
+    .summary-cell.delta .value.delta-zero { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Run diff</h1>
+    <div class="subtitle">{{ old_timestamp }} → {{ new_timestamp }}</div>
+    <div class="headline">{{ headline }}</div>
+  </header>
+  <main>
+    <section>
+      <h2>Summary</h2>
+      <div class="summary-row">
+        <div class="summary-cell">
+          <div class="label-sm">Notes</div>
+          <div class="value">{{ old_note_count }} → {{ new_note_count }}</div>
+        </div>
+        <div class="summary-cell">
+          <div class="label-sm">Chunks</div>
+          <div class="value">{{ old_chunk_count }} → {{ new_chunk_count }}</div>
+        </div>
+        <div class="summary-cell">
+          <div class="label-sm">Clusters</div>
+          <div class="value">{{ old_cluster_count }} → {{ new_cluster_count }}</div>
+        </div>
+        <div class="summary-cell delta">
+          <div class="label-sm">Spikes / Stale</div>
+          <div class="value
+            {%- if spike_delta > 0 %} delta-pos
+            {%- elif spike_delta < 0 %} delta-neg
+            {%- else %} delta-zero
+            {%- endif %}">
+            {{ '%+d'|format(spike_delta) }} / {{ '%+d'|format(stale_delta) }}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {% if matched_rows %}
+    <section>
+      <h2>Matched clusters</h2>
+      <p class="subtitle">
+        Clusters from <code>old</code> that found a counterpart in <code>new</code> by
+        c-TF-IDF keyword fingerprint similarity (threshold 0.3). Sorted by
+        similarity desc.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Sim</th>
+            <th>Old</th>
+            <th>New</th>
+            <th>Δ</th>
+            <th>Verdict</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for row in matched_rows %}
+          <tr>
+            <td><span class="sim">{{ row.similarity }}</span></td>
+            <td>
+              <span class="cid">#{{ row.old_cid }}</span>
+              <span class="label">{{ row.old_label }}</span>
+              <span class="size muted">({{ row.old_size }})</span>
+            </td>
+            <td>
+              <span class="cid">#{{ row.new_cid }}</span>
+              <span class="label">{{ row.new_label }}</span>
+              <span class="size muted">({{ row.new_size }})</span>
+            </td>
+            <td>
+              <span class="
+                {%- if row.delta.startswith('+') %} delta-pos
+                {%- elif row.delta.startswith('-') %} delta-neg
+                {%- else %} delta-zero
+                {%- endif %}">{{ row.delta }}</span>
+            </td>
+            <td><span class="verdict-pill {{ row.verdict_class }}">{{ row.verdict }}</span></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% else %}
+    <section>
+      <h2>Matched clusters</h2>
+      <p class="empty">No clusters matched between these two runs. Either the
+      snapshots predate T1.3 (no fingerprint field) or no cluster pair cleared
+      the 0.3 similarity threshold.</p>
+    </section>
+    {% endif %}
+
+    {% if added_rows %}
+    <section>
+      <h2>Added clusters ({{ added_rows|length }})</h2>
+      <p class="subtitle">In <code>new</code> only — no match in <code>old</code> above the threshold.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Cluster</th>
+            <th>Size</th>
+            <th>Top keywords</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for row in added_rows %}
+          <tr>
+            <td>
+              <span class="cid">#{{ row.cid }}</span>
+              <span class="label">{{ row.label }}</span>
+            </td>
+            <td><span class="size">{{ row.size }}</span></td>
+            <td><span class="fingerprint">{{ row.fingerprint }}</span></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    {% if removed_rows %}
+    <section>
+      <h2>Removed clusters ({{ removed_rows|length }})</h2>
+      <p class="subtitle">In <code>old</code> only — no match in <code>new</code> above the threshold.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Cluster</th>
+            <th>Size</th>
+            <th>Top keywords</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for row in removed_rows %}
+          <tr>
+            <td>
+              <span class="cid">#{{ row.cid }}</span>
+              <span class="label">{{ row.label }}</span>
+            </td>
+            <td><span class="size">{{ row.size }}</span></td>
+            <td><span class="fingerprint">{{ row.fingerprint }}</span></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    {% if added_keyphrases or dropped_keyphrases %}
+    <section>
+      <h2>Keyphrase diff</h2>
+      {% if added_keyphrases %}
+      <h3>New top keyphrases</h3>
+      <ul class="kp-list">
+        {% for phrase, count in added_keyphrases %}
+          <li><span class="label">{{ phrase }}</span> <span class="size muted">({{ count }})</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if dropped_keyphrases %}
+      <h3>Dropped keyphrases</h3>
+      <ul class="kp-list">
+        {% for phrase in dropped_keyphrases %}
+          <li><span class="label">{{ phrase }}</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+    {% endif %}
+
+  </main>
+</body>
+</html>

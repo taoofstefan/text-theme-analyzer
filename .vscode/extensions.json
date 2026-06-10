@@ -1,0 +1,20 @@
+{
+  // Recommended extensions for text-theme-analyzer. VS Code will
+  // prompt the user to install these on first open; the user can
+  // dismiss and the workspace still works.
+  //
+  // Minimum to be productive: ms-python.python + charliermarsh.ruff.
+  // The rest are quality-of-life and won't break anything if missing.
+  "unwantedRecommendations": [
+    // Pylint and flake8 conflict with ruff as the Python linter.
+    "ms-python.pylint",
+    "ms-python.flake8"
+  ],
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "charliermarsh.ruff",
+    "tamasfe.even-better-toml",
+    "redhat.vscode-yaml"
+  ]
+}

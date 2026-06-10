@@ -192,6 +192,53 @@ def _cluster_keyphrases(analysis: Analysis, top_n: int = 8) -> dict[int, list[st
     return out
 
 
+def _cluster_tags(analysis: Analysis, top_n: int = 20) -> dict[int, list[str]]:
+    """Per-cluster tag distribution, derived from notes' `tags` field.
+
+    For each cluster, count tag occurrences across all member notes
+    (counting a tag once per note even if the note appears in multiple
+    chunks — the cluster-level signal is "which themes the writer
+    associated with this cluster", not raw tag-chunk counts). Returns
+    the top-N tags sorted by frequency desc.
+
+    Returns {} when the corpus has no tagged notes, and {} per cluster
+    when a cluster has no tagged member notes.
+
+    Note: the same tag information exists as an `(M, N)` matrix built
+    by `pipeline.clustering.build_tag_matrix` and consumed by
+    `cluster_chunks` (when `tag_weight > 0`). We read strings directly
+    from `Note.tags` here because the LLM wants human-readable tag
+    *names*, not column indices. The matrix is the right primitive for
+    clustering weights; this is the right primitive for the prompt.
+    """
+    if analysis.clusters is None:
+        return {}
+    notes_by_id = {n.id: n for n in analysis.notes}
+    # Map each note to its primary cluster (first non-outlier cluster wins,
+    # matching `_cluster_keyphrases` and the rest of the bundle code).
+    note_to_cluster: dict[str, int] = {}
+    for chunk_idx, cid in enumerate(analysis.clusters.assignments):
+        if cid == -1:
+            continue
+        nid = analysis.chunk_note_ids[chunk_idx]
+        note_to_cluster.setdefault(nid, cid)
+
+    cluster_counts: dict[int, Counter] = {}
+    for nid, cid in note_to_cluster.items():
+        note = notes_by_id.get(nid)
+        if note is None or not note.tags:
+            continue
+        # Count each tag at most once per note (avoids double-counting
+        # when a note spans multiple chunks in the same cluster).
+        for t in set(note.tags):
+            cluster_counts.setdefault(cid, Counter())[t] += 1
+
+    return {
+        cid: [t for t, _ in counts.most_common(top_n)]
+        for cid, counts in cluster_counts.items()
+    }
+
+
 def _truncate_bundle_for_budget(
     cluster_blocks: list[dict],
     *,
@@ -283,6 +330,7 @@ def build_bundle(
         body_chars=chunk_body_chars,
     )
     keyphrases = _cluster_keyphrases(analysis)
+    tags = _cluster_tags(analysis)
 
     # Sort clusters by size desc, take top N.
     cluster_ids = sorted(
@@ -295,16 +343,24 @@ def build_bundle(
     for cid in cluster_ids:
         kws = [w for w, _ in analysis.clusters.cluster_keywords.get(cid, [])[:8]]
         fl = seen.get(cid, (None, None))
+        # Stable key for the "promote to project" affordance. Format:
+        # "<cluster_id>:<last_seen_iso>". If the cluster comes back to
+        # life, last_seen shifts and the key changes — the prior entry
+        # in the target file becomes a historical artifact (informative).
+        last_seen_str = fl[1].isoformat() if fl[1] else "unknown"
+        promote_key = f"{cid}:{last_seen_str}"
         clusters_for_prompt.append({
             "id": cid,
             "size": analysis.clusters.cluster_sizes.get(cid, 0),
             "keywords": kws,
             "keyphrases": keyphrases.get(cid, []),
+            "tags": tags.get(cid, []),
             "representative_titles": titles.get(cid, []),
             "representative_quotes": quotes.get(cid, []),
             "excerpts": excerpts.get(cid, []),
             "first_seen": fl[0].isoformat() if fl[0] else "?",
-            "last_seen": fl[1].isoformat() if fl[1] else "?",
+            "last_seen": last_seen_str,
+            "promote_key": promote_key,
         })
 
     # Enforce bundle size budget.

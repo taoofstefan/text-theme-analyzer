@@ -117,6 +117,52 @@ def analysis_to_dict(analysis: Analysis) -> dict:
     if analysis.enrichment is not None:
         # EnrichmentResult is a Pydantic model.
         out["enrichment"] = json.loads(analysis.enrichment.model_dump_json())
+    # Always emit `promote_keys` (empty when no enrichment / no stale
+    # data) so the CLI can rely on the key being present.
+    out["promote_keys"] = _build_promote_keys(analysis)
+    return out
+
+
+def _build_promote_keys(analysis: Analysis) -> dict[str, dict]:
+    """Build a {promote_key: {...}} lookup for the `tta promote` CLI.
+
+    Joins the LLM `stale_recurring` verdicts onto the deterministic
+    `timeseries.stale` entries on cluster_id. The result is the
+    machine-readable contract the CLI consumes — every entry has
+    enough context to render a project stub without re-running the
+    pipeline.
+    """
+    if analysis.enrichment is None or analysis.timeseries is None:
+        return {}
+    # Index the deterministic stale data by cluster_id for O(1) joins.
+    stale_by_cid: dict[int, object] = {s.cluster_id: s for s in analysis.timeseries.stale}
+    # Index the cluster keywords and representatives if available.
+    keywords_by_cid: dict[int, list[tuple[str, float]]] = (
+        analysis.clusters.cluster_keywords if analysis.clusters else {}
+    )
+    reps_by_cid: dict[int, list[str]] = (
+        analysis.clusters.cluster_representatives if analysis.clusters else {}
+    )
+    out: dict[str, dict] = {}
+    for v in analysis.enrichment.stale_recurring:
+        s = stale_by_cid.get(v.cluster_id)
+        # Synthesize the same key the LLM bundle uses, so the two stay in sync.
+        if s is not None and getattr(s, "last_seen", None) is not None:
+            key = f"{v.cluster_id}:{s.last_seen.isoformat()}"
+        else:
+            key = f"{v.cluster_id}:unknown"
+        out[key] = {
+            "cluster_id": int(v.cluster_id),
+            "theme": v.theme,
+            "verdict": v.verdict,
+            "reasoning": v.reasoning,
+            "last_seen": s.last_seen.isoformat() if s and s.last_seen else None,
+            "first_seen": s.first_seen.isoformat() if s and s.first_seen else None,
+            "frequency": int(s.frequency) if s else None,
+            "severity": getattr(s, "severity", "medium") if s else None,
+            "keywords": [w for w, _ in keywords_by_cid.get(v.cluster_id, [])[:6]],
+            "representative_note_ids": list(reps_by_cid.get(v.cluster_id, []))[:5],
+        }
     return out
 
 

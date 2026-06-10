@@ -9,8 +9,14 @@ dist/
 .venv/
 venv/
 
-# Editor / tool state
-.vscode/
+# Editor / tool state. The .vscode directory is ignored so per-user
+# workspace state (e.g. argv.json, MCP server configs, workspace
+# trust) never leaks, but the two shared config files below are
+# committed so anyone opening the project in VS Code gets a working
+# Python + ruff setup without manual config.
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 .idea/
 *.swp
 .pytest_cache/

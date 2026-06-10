@@ -18,6 +18,10 @@ Rules:
 - For the `evidence` field, paraphrase the supporting material. Do not invent \
   quotes there either.
 - For emotional_tone, use 1-3 hyphenated words (e.g. "frustrated-energized").
+- If a cluster's `tags` list contains words the user already uses in their own \
+  note-tagging, prefer those words (or close synonyms) in `name` and `summary`. \
+  The user's existing tag vocabulary is signal — match it where it fits, don't \
+  override it with generic labels.
 """
 
 
@@ -26,6 +30,7 @@ def _format_cluster_block(clusters_for_prompt: list[dict]) -> str:
     for c in clusters_for_prompt:
         kw = ", ".join(c.get("keywords", [])) or "(no keywords)"
         kp = ", ".join(c.get("keyphrases", [])) or "(none)"
+        tags = ", ".join(c.get("tags", [])) or "(none)"
         titles = "; ".join(c.get("representative_titles", [])) or "(no titles)"
         quotes = "\n    ".join(f'"{q}"' for q in c.get("representative_quotes", [])) or "(no quotes)"
         excerpts = c.get("excerpts") or []
@@ -44,6 +49,7 @@ def _format_cluster_block(clusters_for_prompt: list[dict]) -> str:
             f"{c.get('first_seen','?')} -> {c.get('last_seen','?')}):\n"
             f"  keywords: {kw}\n"
             f"  keyphrases: {kp}\n"
+            f"  tags: {tags}\n"
             f"  titles: {titles}\n"
             f"  sample quotes:\n    {quotes}\n"
             f"  representative excerpts:\n{excerpts_block}"

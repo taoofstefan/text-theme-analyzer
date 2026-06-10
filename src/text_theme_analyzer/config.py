@@ -93,6 +93,21 @@ class OpenAICompatConfig:
 
 
 @dataclass
+class PromoteConfig:
+    """T1.2 — where the `tta promote` subcommand writes project stubs.
+
+    `target_file` is the markdown file that stubs are appended to
+    (default: `promoted-projects.md` next to the input folder). When
+    `sections` is non-empty, new stubs are appended under the first
+    matching `## ` heading (creating it if it doesn't exist). The
+    "To start" / "In progress" / "Archive" convention is up to the
+    user; the tool does not enforce it.
+    """
+    target_file: Path = field(default_factory=lambda: Path("promoted-projects.md"))
+    sections: list[str] = field(default_factory=list)
+
+
+@dataclass
 class Config:
     # I/O
     input_path: Path = field(default_factory=lambda: Path("."))
@@ -125,11 +140,22 @@ class Config:
     min_cluster_size: int | None = None
     umap_n_neighbors: int | None = None
 
+    # Tag-weighted clustering (T1.1). `tag_weight=0.0` disables it
+    # (default behavior is unchanged). `top_n_tags` caps the global tag
+    # vocabulary that gets one-hot-encoded and concatenated to each
+    # chunk's embedding. See `pipeline/clustering.py::build_tag_matrix`.
+    tag_weight: float = 0.0
+    top_n_tags: int = 20
+    tag_field: str = "both"  # reserved: "frontmatter" | "inline" | "both"; only "both" wired in T1.1
+
     # Behavior
     no_llm: bool = False
     dry_run: bool = False
     cache_dir: Path = field(default_factory=lambda: DEFAULT_CACHE_DIR)
     no_cache: bool = False
+
+    # T1.2 — promote-to-project. See `output/promote.py`.
+    promote: PromoteConfig = field(default_factory=PromoteConfig)
 
     # UX
     verbose: bool = False
@@ -187,6 +213,10 @@ def apply_yaml_overrides(config: Config, data: dict[str, Any]) -> None:
         config.min_cluster_size = int(data["min_cluster_size"])
     if "umap_n_neighbors" in data and data["umap_n_neighbors"] is not None:
         config.umap_n_neighbors = int(data["umap_n_neighbors"])
+    if "tag_weight" in data and data["tag_weight"] is not None:
+        config.tag_weight = float(data["tag_weight"])
+    if "top_n_tags" in data and data["top_n_tags"] is not None:
+        config.top_n_tags = int(data["top_n_tags"])
     if "dry_run" in data:
         config.dry_run = bool(data["dry_run"])
     if "no_llm" in data:
@@ -201,6 +231,12 @@ def apply_yaml_overrides(config: Config, data: dict[str, Any]) -> None:
             config.ollama.api_key_env = oll["api_key_env"]
         if "timeout_s" in oll:
             config.ollama.timeout_s = float(oll["timeout_s"])
+    if "promote" in data and isinstance(data["promote"], dict):
+        prm = data["promote"]
+        if "target_file" in prm:
+            config.promote.target_file = Path(prm["target_file"])
+        if "sections" in prm and isinstance(prm["sections"], list):
+            config.promote.sections = [str(s) for s in prm["sections"]]
 
 
 def apply_env_overrides(config: Config) -> None:
@@ -215,6 +251,11 @@ def apply_env_overrides(config: Config) -> None:
             pass  # Ignore malformed timeout env vars — the YAML / default wins.
     if env := os.environ.get("TEXTHEME_CACHE_DIR"):
         config.cache_dir = Path(env)
+    if env := os.environ.get("TEXTHEME_TAG_WEIGHT"):
+        try:
+            config.tag_weight = float(env)
+        except ValueError:
+            pass  # Ignore malformed env vars — the YAML / default wins.
     if env := os.environ.get("TEXTHEME_LOG_LEVEL"):
         # Read by CLI when configuring logging; stored on the env, not the config.
         os.environ["TEXTHEME_LOG_LEVEL"] = env
