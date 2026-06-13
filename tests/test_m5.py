@@ -123,7 +123,6 @@ def test_markdown_includes_tone_section() -> None:
 
 def test_cli_no_llm_produces_all_outputs(tmp_path: Path) -> None:
     """End-to-end smoke: --no-llm mode writes all four artifact types without error."""
-    pytest.importorskip("yake")
     from click.testing import CliRunner
 
     from text_theme_analyzer.cli import main

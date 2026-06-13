@@ -148,6 +148,11 @@ class Config:
     top_n_tags: int = 20
     tag_field: str = "both"  # reserved: "frontmatter" | "inline" | "both"; only "both" wired in T1.1
 
+    # T1.1b — Optional per-tag weights. Maps a tag string to a multiplier
+    # applied to that tag's column in the tag matrix before the global
+    # `tag_weight` is applied. Tags not present in the map default to 1.0.
+    tag_weights: dict[str, float] = field(default_factory=dict)
+
     # Behavior
     no_llm: bool = False
     dry_run: bool = False
@@ -217,6 +222,8 @@ def apply_yaml_overrides(config: Config, data: dict[str, Any]) -> None:
         config.tag_weight = float(data["tag_weight"])
     if "top_n_tags" in data and data["top_n_tags"] is not None:
         config.top_n_tags = int(data["top_n_tags"])
+    if "tag_weights" in data and isinstance(data["tag_weights"], dict):
+        config.tag_weights = {str(k): float(v) for k, v in data["tag_weights"].items()}
     if "dry_run" in data:
         config.dry_run = bool(data["dry_run"])
     if "no_llm" in data:

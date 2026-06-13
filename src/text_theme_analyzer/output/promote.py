@@ -127,15 +127,23 @@ def render_promote_stub(promote_key: str, context: ClusterContext) -> str:
 def _select_bucket_heading(
     existing_buckets: list[str],
     target_section: str | None,
+    configured_sections: list[str] | None = None,
 ) -> str:
     """Decide which `## ` bucket heading a new stub should live under.
 
-    Behavior (matches the plan's "option A" — simple default):
-    - If `target_section` is given, use that exact heading.
-    - Otherwise, use "## Promoted" (single bucket).
+    Priority:
+    1. `target_section` from the LLM verdict (T1.2a). If it matches a
+       configured section name, use it exactly; otherwise fall back to
+       the first configured section (or "Promoted" if none configured).
+    2. The first configured section.
+    3. "## Promoted" as the ultimate default.
     """
     if target_section:
-        return f"## {target_section.strip()}"
+        stripped = target_section.strip()
+        if configured_sections and stripped in configured_sections:
+            return f"## {stripped}"
+    if configured_sections:
+        return f"## {configured_sections[0].strip()}"
     return "## Promoted"
 
 
@@ -212,6 +220,7 @@ def apply_promotion(
     stub: str,
     promote_key: str,
     target_section: str | None = None,
+    configured_sections: list[str] | None = None,
 ) -> None:
     """Idempotently write (or replace) a promote stub in the target file.
 
@@ -223,12 +232,13 @@ def apply_promotion(
       other stubs in the same bucket).
     - If the file exists but has no matching stub: append the stub under
       the bucket heading (creating the bucket if it doesn't exist).
-    - `target_section` overrides the default bucket name ("Promoted").
+    - `target_section` from the LLM verdict is preferred, then the first
+      configured section, then "Promoted".
     """
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
     if not target_path.exists():
-        bucket = _select_bucket_heading([], target_section)
+        bucket = _select_bucket_heading([], target_section, configured_sections)
         content = f"{bucket}\n\n{stub}\n"
         target_path.write_text(content, encoding="utf-8")
         return
@@ -250,7 +260,7 @@ def apply_promotion(
 
     # 2. No matching stub — append under the chosen bucket.
     bucket = _select_bucket_heading(
-        [line for line in lines if line.startswith("## ")], target_section,
+        [line for line in lines if line.startswith("## ")], target_section, configured_sections,
     )
     bucket_span = _find_bucket_span(lines, bucket)
     if bucket_span is not None:

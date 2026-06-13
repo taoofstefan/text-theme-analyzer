@@ -6,14 +6,12 @@ history) on 2026-06-09, plus the gaps surfaced by the 2026-06-10
 T1.1–T1.3 ship + lint cleanup. They are ordered by ROI for the
 current user (the author of the vault) and grouped by effort.
 
-**Current state of the repo** (commit `48773e7`):
+**Current state of the repo** (post-T1.4):
 - 185/185 tests green locally and on CI.
 - Test workflow (`.github/workflows/test.yml`) runs pytest + ruff
   on a 3.11/3.12 × ubuntu/windows matrix; gitleaks workflow
   (`.github/workflows/secret-scan.yml`) runs on every push to main.
-- Tier 1 (T1.1, T1.1a, T1.2, T1.3) is fully shipped. T1.1b and
-  T1.2a remain as Tier-1 follow-ups; T1.4 is the new entry
-  (yake zero-dep gap, see below).
+- Tier 1 is fully shipped.
 
 ---
 
@@ -149,28 +147,39 @@ tag vocabulary regardless of `--tag-weight`.
 > shape (frequency order, dedup, columns/width invariant, alignment
 > to matrix indices, empty-corpus fallback). 185/185 tests green.
 
-> **TODO** (flagged at end of T1.1a implementation). The
-> `build_tag_matrix` signature is now ready for per-tag weights,
-> but we don't expose a way to set them. The next step is a
-> `tag_weights: dict[str, float]` config (YAML map under
-> `tag_weights:`), plumbed through `Config` and applied in
-> `cluster_chunks` as a per-column scale on the tag contribution
-> (`tag_matrix[:, j] * tag_weights[tag_columns[j]]`). Revisit
-> when the user actually has differential weight requirements;
-> the current corpus is flat.
+> **DONE** (T1.1b implementation). `Config` now has a
+> `tag_weights: dict[str, float]` field, read from the YAML
+> `tag_weights:` map and from `--tag-weights '{"foo":2.0}'` on the
+> CLI. The orchestrator passes `tag_columns` and `tag_weights` to
+> `cluster_chunks`, which applies per-column scaling before the
+> global `tag_weight` scale. Tags not in the map default to 1.0.
+> Tests: 6 new in `tests/test_t11b_per_tag_weights.py` (config
+> default, YAML override, string-to-float conversion, per-tag
+> scale application, unknown-tag tolerance, no-op when global
+> `tag_weight=0`). All green.
 
-**File pointers** (for whoever picks T1.1b up):
-- `src/text_theme_analyzer/pipeline/clustering.py:build_tag_matrix`
-  (the tuple-return contract; tag_columns is the string→index map)
-- `src/text_theme_analyzer/pipeline/clustering.py:cluster_chunks`
-  (the `np.hstack([embeddings, tag_matrix * tag_weight])` line —
-  the per-column scale goes here)
-- `src/text_theme_analyzer/pipeline/orchestrator.py:run` (the
-  `tag_matrix, _tag_columns = build_tag_matrix(...)` call; replace
-  the `_` with `tag_columns` and pass to a new config field)
-- `src/text_theme_analyzer/config.py` (add a `tag_weights: dict[str, float]`
-  field; YAML override branch mirroring the `ollama` /
-  `promote` blocks)
+**How to use it (post-T1.1b):**
+
+In `text-theme-analyzer.yml`:
+
+```yaml
+tag_weight: 0.3
+tag_weights:
+  consulting: 2.0
+  life: 0.5
+```
+
+Or on the CLI:
+
+```bash
+tta analyze . --tag-weight 0.3 --tag-weights '{"consulting":2.0,"life":0.5}'
+```
+
+**File pointers (for future tweaks):**
+- `src/text_theme_analyzer/config.py` (`tag_weights` field and YAML override)
+- `src/text_theme_analyzer/cli.py` (`--tag-weights` flag and `_build_config` plumbing)
+- `src/text_theme_analyzer/pipeline/clustering.py::cluster_chunks` (per-column scale)
+- `src/text_theme_analyzer/pipeline/orchestrator.py::run` (passes `tag_columns` + `tag_weights`)
 
 ### T1.2 — A "promote to project" action on stale verdicts
 
@@ -233,45 +242,39 @@ a non-Obsidian user gets a normal markdown file in any editor.
 
 ### T1.2a — Smarter section routing for promote stubs
 
-> **TODO** (flagged at end of T1.2 implementation). The current
-> default routes every new stub to `promote.sections[0]` (or
-> `## Promoted` if no sections are configured). That's fine for a
-> single-bucket Kanban but is opinionated when the user has set
-> up multiple buckets ("To start" / "In progress" / "Archive").
+> **DONE** (T1.2a implementation — option 1). The `StaleVerdict`
+> schema now has an optional `target_section` field. The LLM is
+> told the user's configured `promote.sections` and asked to pick
+> one when returning a `promote_to_project` verdict. `_select_bucket_heading`
+> prefers `target_section` when it matches a configured section, then
+> falls back to `promote.sections[0]`, then `## Promoted`.
+> The CLI `tta promote` reads `target_section` from `themes.json`
+> and passes it to `apply_promotion`. CLI `--section` still wins over
+> the LLM choice. Tests: 7 new in `tests/test_t12a_target_section.py`
+> plus an updated `tests/test_t12_promote.py`. All green.
 
-Today the choice is "always land in the first bucket" — the user
-moves entries manually in any markdown editor. That's a defensible
-default (it matches the vault-agnostic spirit of "let the user
-decide"), but it means a `tta promote` invocation never lands in
-"In progress" or "Archive" by itself.
+**How to use it (post-T1.2a):**
 
-Two reasonable extensions, in order of effort:
+Configure sections in `text-theme-analyzer.yml`:
 
-1. **`--section` is per-invocation today (CLI override).** Wire it
-   into a per-cluster override too: a `target_section` field on the
-   `StaleVerdict` schema, with the LLM picking a section name from
-   `promote.sections` (and falling back to `sections[0]` if it
-   can't decide). The cost is a small schema change + LLM prompt
-   nudge; the benefit is "I clicked Copy → ran the command → the
-   stub landed in the right column without me touching it."
+```yaml
+promote:
+  sections: ["To start", "In progress", "Archive"]
+```
 
-2. **Deterministic severity-based heuristic.** When `sections` is
-   non-empty, route by `StaleIdea.severity`:
-   - `strong` → `sections[0]` (the "To start" equivalent)
-   - `medium` → `sections[0]`
-   - `weak` → `sections[-1]` (the "Archive" equivalent)
-   No LLM call, but opinionated. Useful as a stepping-stone
-   before option 1.
+When the LLM returns a `promote_to_project` verdict, it can now
+include `target_section: "Archive"` (or any configured name). The
+`tta promote` command will land the stub under that `## ` heading.
+If the LLM returns an unknown section, the stub falls back to the
+first configured section.
 
-**When to revisit**: the moment a user complains "I have to move
-half my promotes by hand" or "the archive bucket is full of stuff
-that's still alive". Not a real user request yet.
-
-**File pointers**:
+**File pointers (for future tweaks):**
+- `src/text_theme_analyzer/llm/schemas.py::StaleVerdict`
+- `src/text_theme_analyzer/llm/prompts.py` (section hint added to user prompt)
+- `src/text_theme_analyzer/llm/enrichment.py` (passes `promote_sections` into bundle)
 - `src/text_theme_analyzer/output/promote.py::_select_bucket_heading`
-- `src/text_theme_analyzer/llm/schemas.py::StaleVerdict` (option 1)
-- `src/text_theme_analyzer/pipeline/model.py::StaleIdea.severity`
-  (option 2)
+- `src/text_theme_analyzer/output/json_report.py::_build_promote_keys`
+- `src/text_theme_analyzer/cli.py::promote_cmd` (reads `target_section` from JSON)
 
 ### T1.3 — Multi-run diff
 
@@ -316,57 +319,39 @@ that's still alive". Not a real user request yet.
 
 ### T1.4 — Real zero-dep fallback for the keyword extractor
 
-> **OPEN** (gap surfaced 2026-06-10, see commit `48773e7` and the
-> `project-extract-with-yake-not-zero-dep` memory). Currently
-> *worked around* with `pytest.importorskip("yake")` in 4
-> end-to-end tests so CI's lean install passes — but the
-> underlying bug is unfixed.
+> **DONE** (T1.4 implementation). `extract_with_yake` was a docstring
+> lie: it imported `yake`, so a lean install crashed. It has been
+> replaced by `extract_zero_dep`, a pure-Python TF-IDF-lite extractor
+> over unigrams and contiguous 1-3 grams of non-stopword tokens.
+> The orchestrator now defaults to `method="keybert"`, so the
+> existing `try/except ImportError` fallback chain in
+> `extract_keyphrases` actually fires on lean installs and routes
+> to `extract_zero_dep`. The legacy `method="yake"` name is still
+> accepted and also routes to the zero-dep extractor. The four
+> `pytest.importorskip("yake")` gates in the end-to-end tests have
+> been removed.
+>
+> Tests: 7 new in `tests/test_keywords_zero_dep.py` (empty/stopword
+> input, phrase extraction, IDF preference for rare terms, top-n
+> cap, routing for both `method="yake"` and `method="keybert"`
+> fallback, resilience when `yake` is unavailable). 185/185 tests
+> green locally.
 
-The pipeline's `keywords.py::extract_with_yake` has a docstring
-that says "YAKE fallback: zero-dep, but lower quality. Scores are
-inverted (higher = better)." It is **not** zero-dep — the function
-body does `import yake` and crashes if the package is missing. The
-orchestrator (`pipeline/orchestrator.py:66`) calls
-`extract_keyphrases(..., method="yake")` by default, so a lean
-install (`pip install -e ".[dev]"` without the heavy extras)
-crashes the *entire* pipeline on `ModuleNotFoundError: No module
-named 'yake'`. The `extract_keyphrases` wrapper has a
-`try: extract_with_keybert ... except ImportError: extract_with_yake`
-path that *was* meant to be the fallback chain, but the orchestrator
-bypasses it by passing `method="yake"` directly.
+**How to use it (post-T1.4):**
 
-The right fix is two changes:
+On a full install (`pip install -e ".[heavy]"` or the published
+package, which includes KeyBERT), nothing changes — KeyBERT is still
+used. On a lean install (`pip install -e ".[dev]"`), the pipeline
+no longer crashes; it falls back to the zero-dep extractor
+automatically. Explicit `method="yake"` still works but no longer
+requires the yake package.
 
-1. **Replace `extract_with_yake` with a real zero-dep fallback.**
-   A small TF-IDF-lite or word-frequency + noun-phrase extractor
-   (~50 lines, no deps). It will be lower quality than yake/keybert
-   but actually zero-dep, so the docstring claim becomes true.
-2. **Change the orchestrator default to `method="keybert"`.** The
-   `try/except ImportError` in `extract_keyphrases` then actually
-   fires on lean installs, and keybert-heavy users get the better
-   result. The default works on every install.
-
-After the fix, the `pytest.importorskip("yake")` gates on the 4
-end-to-end tests can be removed (the tests no longer need to skip
-on lean installs because the pipeline no longer crashes).
-
-**Why this matters:** today, anyone who installs the package via
-`pip install text-theme-analyzer` (not `pip install -e ".[heavy]"`)
-and runs `tta analyze` will hit this. It's the one "looks like it
-should work but doesn't" install path left in the project.
-
-**File pointers:**
-- `src/text_theme_analyzer/pipeline/keywords.py:152`
-  (`extract_with_yake` — the docstring lie is here)
-- `src/text_theme_analyzer/pipeline/keywords.py:171`
-  (`extract_keyphrases` — the existing `try/except ImportError`
-  fallback chain; just needs the orchestrator to use it)
-- `src/text_theme_analyzer/pipeline/orchestrator.py:66`
-  (`method="yake"` default; should be `method="keybert"`)
-- `tests/test_cli_glob_recovery.py:148`,
-  `tests/test_config_precedence.py:66, 81`,
-  `tests/test_m5.py:127` — the 4 importorskip gates to remove
-  after the fix lands.
+**File pointers (for future tweaks):**
+- `src/text_theme_analyzer/pipeline/keywords.py::extract_zero_dep`
+- `src/text_theme_analyzer/pipeline/keywords.py::extract_keyphrases`
+  (fallback chain)
+- `src/text_theme_analyzer/pipeline/orchestrator.py` (the
+  `method="keybert"` default)
 
 ---
 

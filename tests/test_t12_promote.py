@@ -335,7 +335,11 @@ def test_apply_promotion_replaces_existing_section_by_promote_key(tmp_path: Path
 def test_apply_promotion_with_sections_routes_to_named_heading(tmp_path: Path) -> None:
     target = tmp_path / "promoted.md"
     stub = render_promote_stub("12:2025-04-01", _ctx())
-    apply_promotion(target, stub, promote_key="12:2025-04-01", target_section="In progress")
+    apply_promotion(
+        target, stub, promote_key="12:2025-04-01",
+        target_section="In progress",
+        configured_sections=["To start", "In progress", "Archive"],
+    )
     content = target.read_text(encoding="utf-8")
     assert "## In progress" in content
     # The bucket heading comes before the stub's H3.

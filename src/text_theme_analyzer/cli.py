@@ -61,6 +61,7 @@ def _build_config(
     umap_n_neighbors: int | None,
     tag_weight: float,
     top_n_tags: int,
+    tag_weights_json: str | None,
     no_llm: bool,
     dry_run: bool,
     cache_dir: Path,
@@ -126,6 +127,9 @@ def _build_config(
         config.tag_weight = tag_weight
     if "top_n_tags" in cli_passed:
         config.top_n_tags = top_n_tags
+    if "tag_weights" in cli_passed and tag_weights_json is not None:
+        import json
+        config.tag_weights = {str(k): float(v) for k, v in json.loads(tag_weights_json).items()}
     if "no_llm" in cli_passed:
         config.no_llm = no_llm
     if "dry_run" in cli_passed:
@@ -367,6 +371,9 @@ main.main = _patched_main  # type: ignore[method-assign]
               help="Cap on the global tag vocabulary used for tag-weighted clustering and the LLM "
                    "tag-distribution prompt (T1.1). The top-N most-frequent tags in the corpus are "
                    "retained; the rest are dropped.")
+@click.option("--tag-weights", "tag_weights_json", default=None, callback=_record_passed,
+              help="JSON map of tag string to multiplier for per-tag weighting (T1.1b). "
+                   "Example: '{\"consulting\":2.0,\"life\":0.5}'. Applied column-wise before --tag-weight.")
 @click.option("--no-llm", is_flag=True, help="Skip LLM enrichment (M1 default behavior).", callback=_record_passed)
 @click.option("--dry-run", is_flag=True, help="Run ingest + clustering, then print a preview (LLM bundle size estimate) and exit. No LLM call, no output files written.", callback=_record_passed)
 @click.option("--cache-dir", type=Path, default=None, callback=_record_passed)
@@ -393,6 +400,7 @@ def analyze(
     umap_n_neighbors: int | None,
     tag_weight: float,
     top_n_tags: int,
+    tag_weights_json: str | None,
     no_llm: bool,
     dry_run: bool,
     cache_dir: Path | None,
@@ -428,6 +436,7 @@ def analyze(
         umap_n_neighbors=umap_n_neighbors,
         tag_weight=tag_weight,
         top_n_tags=top_n_tags,
+        tag_weights_json=tag_weights_json,
         no_llm=no_llm,
         dry_run=dry_run,
         cache_dir=cache_dir or Path.home() / ".cache" / "text-theme-analyzer",
@@ -681,9 +690,14 @@ def promote_cmd(
 
     stub = render_promote_stub(promote_key, context)
 
-    # Resolve target file + section. CLI flags override config.
+    # Resolve target file + section. CLI flags override LLM verdict;
+    # LLM verdict overrides config default.
     target = target_file or config.promote.target_file
     target_section = section
+    if target_section is None:
+        llm_section = record.get("target_section")
+        if llm_section is not None:
+            target_section = llm_section
     if target_section is None and config.promote.sections:
         target_section = config.promote.sections[0]
 
@@ -692,6 +706,7 @@ def promote_cmd(
         stub=stub,
         promote_key=promote_key,
         target_section=target_section,
+        configured_sections=[str(s) for s in config.promote.sections],
     )
 
     click.echo(f"[promote] wrote {target} ({promote_key})", err=True)

@@ -63,7 +63,7 @@ def run(config: Config) -> Analysis:
 
     per_chunk_kws = extract_keyphrases(
         all_chunks,
-        method="yake",
+        method="keybert",
         top_n=10,
         embedding_model=None,
     )
@@ -90,14 +90,14 @@ def run(config: Config) -> Analysis:
     # tag distribution regardless of the clustering weight). When the
     # corpus has no tags, the matrix is (M, 0) and contributes nothing.
     # `tag_columns` is the corpus's top-N tag ordering in frequency-desc
-    # order — the hook for future per-tag weight tables (T1.1b). It's
-    # intentionally unused today; `build_tag_matrix` returns it so the
-    # string→index mapping is available at the call site when we need it.
-    tag_matrix, _tag_columns = build_tag_matrix(notes, all_chunks, top_n_tags=config.top_n_tags)
+    # order — the hook for per-tag weight tables (T1.1b). It's passed to
+    # `cluster_chunks` so individual tags can be scaled independently.
+    tag_matrix, tag_columns = build_tag_matrix(notes, all_chunks, top_n_tags=config.top_n_tags)
     if tag_matrix.shape[1] > 0:
+        n_tag_weights = len(config.tag_weights)
         log(
             f"[tag] using top {tag_matrix.shape[1]} tags "
-            f"(weight={config.tag_weight})",
+            f"(weight={config.tag_weight}, {n_tag_weights} per-tag weights)",
             quiet=config.quiet,
         )
 
@@ -110,6 +110,8 @@ def run(config: Config) -> Analysis:
             tag_weight=config.tag_weight,
             top_n_tags=config.top_n_tags,
             tag_matrix=tag_matrix,
+            tag_columns=tag_columns,
+            tag_weights=config.tag_weights,
         )
     except Exception as e:
         log(f"[cluster] skipped (not enough data for UMAP/HDBSCAN): {e}", quiet=config.quiet)
@@ -178,6 +180,9 @@ def run(config: Config) -> Analysis:
                 "stale_window_weeks": config.stale_window_weeks,
                 "min_cluster_size": config.min_cluster_size,
                 "umap_n_neighbors": config.umap_n_neighbors,
+                "tag_weight": config.tag_weight,
+                "top_n_tags": config.top_n_tags,
+                "promote_sections": [str(s) for s in config.promote.sections],
             },
             "dry_run": bundle_estimate,
         }
@@ -234,6 +239,9 @@ def run(config: Config) -> Analysis:
             "stale_window_weeks": config.stale_window_weeks,
             "min_cluster_size": config.min_cluster_size,
             "umap_n_neighbors": config.umap_n_neighbors,
+            "tag_weight": config.tag_weight,
+            "top_n_tags": config.top_n_tags,
+            "promote_sections": [str(s) for s in config.promote.sections],
         },
     }
     if notes and notes[0].date is not None:

@@ -104,6 +104,8 @@ def cluster_chunks(
     tag_weight: float = 0.0,
     top_n_tags: int = 20,
     tag_matrix: np.ndarray | None = None,
+    tag_columns: list[str] | None = None,
+    tag_weights: dict[str, float] | None = None,
 ) -> ClusterResult:
     """Cluster chunk embeddings into thematic groups.
 
@@ -112,10 +114,11 @@ def cluster_chunks(
 
     When `tag_weight > 0` and `tag_matrix` is provided (shape `(M, N)` where
     M == len(chunks)), the effective embedding used for clustering is
-    `np.hstack([embeddings, tag_matrix * tag_weight])`. The `umap_2d`
-    projection that drives the dashboard's bubble map always uses the
-    original embeddings — concatenation would shift the 2D layout in
-    hard-to-interpret ways, and the dashboard map is a navigation aid,
+    `np.hstack([embeddings, tag_matrix * tag_weight])`. Per-tag weights
+    (T1.1b) are applied column-wise before the global `tag_weight` scale.
+    The `umap_2d` projection that drives the dashboard's bubble map always
+    uses the original embeddings — concatenation would shift the 2D layout
+    in hard-to-interpret ways, and the dashboard map is a navigation aid,
     not a clustering view.
 
     `tag_weight=0` (the default) is a no-op: the effective embedding is
@@ -142,7 +145,13 @@ def cluster_chunks(
     # is left untouched — the 2D projection below needs it. (See
     # docstring for the dashboard-map reasoning.)
     if tag_weight and tag_weight > 0 and tag_matrix is not None and tag_matrix.shape[0] == n:
-        cluster_embeddings = np.hstack([embeddings, tag_matrix * float(tag_weight)]).astype(np.float32)
+        scaled_matrix = tag_matrix.astype(np.float32)
+        if tag_columns and tag_weights:
+            for j, tag in enumerate(tag_columns):
+                w = tag_weights.get(tag)
+                if w is not None:
+                    scaled_matrix[:, j] *= float(w)
+        cluster_embeddings = np.hstack([embeddings, scaled_matrix * float(tag_weight)]).astype(np.float32)
     else:
         cluster_embeddings = embeddings
 

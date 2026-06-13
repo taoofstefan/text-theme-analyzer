@@ -104,7 +104,7 @@ Every run writes a snapshot to `{output_dir}/run-history/{timestamp}.json` via `
 - **Globs** in `--include` / `--exclude` are matched with a hand-rolled `fnmatch` normalizer in `ingest.py` (strips leading `**/`, matches both name and relpath). Don't swap it for `pathlib.PurePath.match` — that breaks on Windows path separators. There is a dedicated regression test at `tests/test_cli_glob_recovery.py`.
 - **Schemas are a contract.** `llm/schemas.py` Pydantic models define the post-validation shape of the LLM response. Field length caps were loosened in commit `a01442d` (60/80/600 → 120/160/1000) — the real-corpus run hit those ceilings. Bump caps defensively, but think about it.
 - **Outputs are additive.** Each output format is independent; removing one renderer should not affect the others. `cli.py` is the only place that fans out to the four of them.
-- **The test suite is the spec.** Heavy-deps tests use `pytest.importorskip` so the suite runs even without the M2 stack (sentence-transformers, BERTopic, etc.) installed. End-to-end tests that go through the orchestrator also need `pytest.importorskip("yake")` because the keyword extractor defaults to `method="yake"` and the orchestrator's heavy-deps path isn't gated otherwise — see T1.4 in `docs/FOLLOW_UP.md` for the underlying zero-dep gap.
+- **The test suite is the spec.** Heavy-deps tests use `pytest.importorskip` so the suite runs even without the M2 stack (sentence-transformers, BERTopic, etc.) installed. The keyword extractor defaults to `method="keybert"` and falls back to a pure-Python zero-dep extractor when KeyBERT is unavailable, so end-to-end tests no longer need a `yake` gate (T1.4 is shipped).
 
 ## What is private and what is committed
 

@@ -64,6 +64,7 @@ def build_user_prompt(
     clusters: list[dict],
     spikes: list[dict],
     stale_candidates: list[dict],
+    promote_sections: list[str] | None = None,
 ) -> str:
     """Build the user-prompt bundle sent to the LLM."""
     clusters_block = _format_cluster_block(clusters)
@@ -75,6 +76,14 @@ def build_user_prompt(
         f"- cluster {s['cluster_id']}: {s['first_seen']} -> {s['last_seen']} freq={s['frequency']}"
         for s in stale_candidates
     ) or "(none)"
+    section_hint = ""
+    if promote_sections:
+        section_hint = (
+            "\nWhen a stale verdict is 'promote_to_project', pick a `target_section` "
+            f"from the user's configured project-board sections: {promote_sections!r}. "
+            "Choose the section that best fits the actionability of the idea. "
+            "Return the section name exactly as shown. If none fit, leave it null.\n"
+        )
     lo, hi = date_range
     return (
         f"Total notes: {total_notes} ({lo or '?'} to {hi or '?'})\n\n"
@@ -82,6 +91,7 @@ def build_user_prompt(
         f"{clusters_block}\n\n"
         f"Recent spikes:\n{spike_block}\n\n"
         f"Stale-but-recurring candidates:\n{stale_block}\n\n"
+        f"{section_hint}"
         f"Return a single JSON object with this exact shape:\n"
         f"{{\n"
         f"  \"clusters\": [\n"
@@ -97,7 +107,8 @@ def build_user_prompt(
         f"  ],\n"
         f"  \"stale_recurring\": [\n"
         f"    {{\"cluster_id\": int, \"theme\": str, "
-        f"\"verdict\": \"promote_to_project|archive|keep_observing\", \"reasoning\": str}}\n"
+        f"\"verdict\": \"promote_to_project|archive|keep_observing\", \"reasoning\": str, "
+        f"\"target_section\": str | null}}\n"
         f"  ]\n"
         f"}}\n"
     )

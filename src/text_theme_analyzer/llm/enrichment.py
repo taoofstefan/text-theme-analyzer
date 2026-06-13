@@ -390,6 +390,13 @@ def build_bundle(
     if "date_range" in analysis.metadata:
         date_range = (analysis.metadata["date_range"][0], analysis.metadata["date_range"][1])
 
+    # T1.2a: pass configured project-board sections so the LLM can pick a
+    # `target_section` for promote_to_project verdicts. Empty list means
+    # no hint is added to the prompt.
+    promote_sections: list[str] = []
+    if "config" in analysis.metadata:
+        promote_sections = list(analysis.metadata["config"].get("promote_sections") or [])
+
     bundle_size = sum(len(json.dumps(b, default=str)) for b in clusters_for_prompt)
     return {
         "total_notes": len(analysis.notes),
@@ -399,6 +406,7 @@ def build_bundle(
         "stale_candidates": stale_for_prompt,
         "bundle_chars": bundle_size,
         "dropped_clusters": dropped_clusters,
+        "promote_sections": promote_sections,
         "_quotes_by_cluster": quotes,  # used locally for validation, not sent
     }
 
@@ -490,6 +498,7 @@ def enrich(analysis: Analysis, client: LLMClient) -> EnrichmentResult:
         clusters=bundle["clusters"],
         spikes=bundle["spikes"],
         stale_candidates=bundle["stale_candidates"],
+        promote_sections=bundle.get("promote_sections"),
     )
     result = _parse_with_retry(client, SYSTEM_PROMPT, user_prompt)
     return _validate_quotes(result, quotes_by_cluster)

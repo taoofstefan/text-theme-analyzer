@@ -155,6 +155,7 @@ def _build_promote_keys(analysis: Analysis) -> dict[str, dict]:
             "theme": v.theme,
             "verdict": v.verdict,
             "reasoning": v.reasoning,
+            "target_section": getattr(v, "target_section", None),
             "last_seen": s.last_seen.isoformat() if s and s.last_seen else None,
             "first_seen": s.first_seen.isoformat() if s and s.first_seen else None,
             "frequency": int(s.frequency) if s else None,

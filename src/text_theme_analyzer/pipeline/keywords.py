@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Iterable
+from math import log
 
 from text_theme_analyzer.pipeline.model import Note, NoteChunk
+
+# Alphabetic tokens only. Hyphens and digits are stripped so phrases like
+# "state-of-the-art" collapse to usable words; the downstream aggregator
+# already treats short tokens and pure stopwords as noise.
+_TOKEN_RE = re.compile(r"[a-zA-Z]+")
 
 # Common stopwords used to filter phrases that are all stopwords.
 # KeyBERT already drops these, but YAKE doesn't, and chunk-level rollups
@@ -149,22 +156,70 @@ def extract_with_keybert(
     return out
 
 
-def extract_with_yake(
+def _tokens(text: str) -> list[str]:
+    """Lowercase alphabetic tokens, dropping stopwords and single letters."""
+    return [
+        t.lower()
+        for t in _TOKEN_RE.findall(text)
+        if len(t) > 1 and t.lower() not in STOPWORDS
+    ]
+
+
+def _tfidf_lite_score(
+    term: str,
+    tf: Counter[str],
+    doc_freq: Counter[str],
+    n_docs: int,
+) -> float:
+    df = doc_freq.get(term, 1)
+    idf = log(n_docs / max(df, 1)) + 1.0
+    return log(1 + tf.get(term, 0)) * idf
+
+
+def extract_zero_dep(
     texts: list[str],
     *,
     top_n: int = 10,
 ) -> list[list[tuple[str, float]]]:
-    """YAKE fallback: zero-dep, but lower quality. Scores are inverted (higher = better)."""
-    import yake  # type: ignore
+    """Pure-Python keyword fallback: no external deps, lower quality than KeyBERT.
 
-    extractor = yake.KeywordExtractor(lan="en", n=3, dedupLim=0.7, top=top_n)
+    Uses a TF-IDF-lite score over unigrams and simple contiguous n-grams
+    (up to 3 words) of non-stopword tokens. The result shape mirrors
+    KeyBERT/YAKE: a per-text list of (phrase, score) with higher scores
+    for phrases that are frequent in the document and rare in the corpus.
+    """
+    tokenized = [_tokens(t) for t in texts]
+    n_docs = max(len(texts), 1)
+
+    # Document frequency over the whole batch.
+    doc_freq: Counter[str] = Counter()
+    for tokens in tokenized:
+        doc_freq.update(set(tokens))
+
     out: list[list[tuple[str, float]]] = []
-    for text in texts:
-        if not text.strip():
+    for tokens in tokenized:
+        if not tokens:
             out.append([])
             continue
-        kws = extractor.extract_keywords(text)
-        out.append([(str(p), float(s)) for p, s in kws])
+
+        tf: Counter[str] = Counter(tokens)
+        candidates: dict[str, float] = {}
+        length = len(tokens)
+        for i in range(length):
+            for j in range(i + 1, min(i + 4, length + 1)):
+                phrase = " ".join(tokens[i:j])
+                if phrase in candidates:
+                    continue
+                phrase_terms = tokens[i:j]
+                # Average per-word score keeps short and long phrases on a
+                # comparable scale; the downstream aggregator still prefers
+                # phrases that appear in many notes.
+                candidates[phrase] = sum(
+                    _tfidf_lite_score(t, tf, doc_freq, n_docs) for t in phrase_terms
+                ) / len(phrase_terms)
+
+        ranked = sorted(candidates.items(), key=lambda kv: kv[1], reverse=True)
+        out.append(ranked[:top_n])
     return out
 
 
@@ -175,16 +230,22 @@ def extract_keyphrases(
     top_n: int = 10,
     embedding_model: str | None = None,
 ) -> list[list[tuple[str, float]]]:
-    """Extract keyphrases for each chunk. Result is parallel to `chunks`."""
+    """Extract keyphrases for each chunk. Result is parallel to `chunks`.
+
+    `method="keybert"` is the default. If KeyBERT is not installed,
+    it falls back to the pure-Python zero-dep extractor. The legacy
+    `method="yake"` name is still accepted and also routes to the
+    zero-dep extractor (the yake package is no longer imported).
+    """
     chunk_list = list(chunks)
     texts = [c.text for c in chunk_list]
     if method == "keybert":
         try:
             return extract_with_keybert(texts, top_n=top_n, embedding_model=embedding_model)
         except ImportError:
-            return extract_with_yake(texts, top_n=top_n)
+            return extract_zero_dep(texts, top_n=top_n)
     if method == "yake":
-        return extract_with_yake(texts, top_n=top_n)
+        return extract_zero_dep(texts, top_n=top_n)
     raise ValueError(f"Unknown keyphrase method: {method}")
 
 

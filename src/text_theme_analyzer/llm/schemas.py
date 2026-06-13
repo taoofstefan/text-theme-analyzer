@@ -42,6 +42,7 @@ class StaleVerdict(BaseModel):
     theme: str = Field(..., min_length=2, max_length=120)
     verdict: Literal["promote_to_project", "archive", "keep_observing"]
     reasoning: str = Field(..., min_length=5, max_length=400)
+    target_section: str | None = Field(default=None, max_length=80)
 
 
 class QuoteValidation(BaseModel):
