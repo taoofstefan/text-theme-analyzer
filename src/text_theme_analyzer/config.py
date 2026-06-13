@@ -108,6 +108,30 @@ class PromoteConfig:
 
 
 @dataclass
+class CorpusConfig:
+    """T2.2 — one entry in the `corpora:` map for `tta run-all`.
+
+    Each corpus overrides the global defaults it specifies. Unspecified
+    fields inherit from the global `Config`. The `output_dir` default is
+    `{global_output_dir}/{name}`.
+    """
+
+    input_path: Path | None = None
+    output_dir: Path | None = None
+    include: list[str] | None = None
+    exclude: list[str] | None = None
+    since: date | None = None
+    until: date | None = None
+    require_dates: bool | None = None
+    tag_weight: float | None = None
+    top_n_tags: int | None = None
+    tag_weights: dict[str, float] | None = None
+    min_cluster_size: int | None = None
+    umap_n_neighbors: int | None = None
+    promote: PromoteConfig | None = None
+
+
+@dataclass
 class Config:
     # I/O
     input_path: Path = field(default_factory=lambda: Path("."))
@@ -171,6 +195,10 @@ class Config:
     # UX
     verbose: bool = False
     quiet: bool = False
+
+    # T2.2 — per-corpus runs for `tta run-all`. Dict keys are corpus
+    # names (used as URL/path slugs); values override global defaults.
+    corpora: dict[str, CorpusConfig] = field(default_factory=dict)
 
 
 CONFIG_LOCATIONS: list[Path] = [
@@ -252,6 +280,96 @@ def apply_yaml_overrides(config: Config, data: dict[str, Any]) -> None:
             config.promote.target_file = Path(prm["target_file"])
         if "sections" in prm and isinstance(prm["sections"], list):
             config.promote.sections = [str(s) for s in prm["sections"]]
+    if "corpora" in data and isinstance(data["corpora"], dict):
+        config.corpora = _load_corpora(data["corpora"])
+
+
+def _load_corpora(data: dict[str, Any]) -> dict[str, CorpusConfig]:
+    """Parse the `corpora:` YAML block into a name -> CorpusConfig map."""
+    out: dict[str, CorpusConfig] = {}
+    for name, raw in data.items():
+        if not isinstance(raw, dict):
+            continue
+        cfg = CorpusConfig()
+        if "input_path" in raw:
+            cfg.input_path = Path(raw["input_path"])
+        if "output_dir" in raw:
+            cfg.output_dir = Path(raw["output_dir"])
+        if "include" in raw:
+            cfg.include = list(raw["include"])
+        if "exclude" in raw:
+            cfg.exclude = list(raw["exclude"])
+        if "since" in raw:
+            cfg.since = date.fromisoformat(str(raw["since"]))
+        if "until" in raw:
+            cfg.until = date.fromisoformat(str(raw["until"]))
+        if "require_dates" in raw:
+            cfg.require_dates = bool(raw["require_dates"])
+        if "tag_weight" in raw:
+            cfg.tag_weight = float(raw["tag_weight"])
+        if "top_n_tags" in raw:
+            cfg.top_n_tags = int(raw["top_n_tags"])
+        if "tag_weights" in raw and isinstance(raw["tag_weights"], dict):
+            cfg.tag_weights = {str(k): float(v) for k, v in raw["tag_weights"].items()}
+        if "min_cluster_size" in raw and raw["min_cluster_size"] is not None:
+            cfg.min_cluster_size = int(raw["min_cluster_size"])
+        if "umap_n_neighbors" in raw and raw["umap_n_neighbors"] is not None:
+            cfg.umap_n_neighbors = int(raw["umap_n_neighbors"])
+        if "promote" in raw and isinstance(raw["promote"], dict):
+            prm = raw["promote"]
+            cfg.promote = PromoteConfig()
+            if "target_file" in prm:
+                cfg.promote.target_file = Path(prm["target_file"])
+            if "sections" in prm and isinstance(prm["sections"], list):
+                cfg.promote.sections = [str(s) for s in prm["sections"]]
+        out[str(name)] = cfg
+    return out
+
+
+def _apply_corpus_overrides(base: Config, name: str, corpus: CorpusConfig) -> Config:
+    """Return a new Config for one corpus, inheriting unset fields from `base`."""
+    cfg = Config()
+    # Start by copying every base field we support.
+    cfg.input_path = corpus.input_path if corpus.input_path is not None else base.input_path
+    cfg.outputs = list(base.outputs)
+    cfg.output_dir = (
+        corpus.output_dir
+        if corpus.output_dir is not None
+        else base.output_dir / name
+    )
+    cfg.provider = base.provider
+    cfg.model = base.model
+    cfg.embedding_model = base.embedding_model
+    cfg.ollama = base.ollama
+    cfg.openai_compat = base.openai_compat
+    cfg.include = corpus.include if corpus.include is not None else list(base.include)
+    cfg.exclude = corpus.exclude if corpus.exclude is not None else list(base.exclude)
+    cfg.since = corpus.since if corpus.since is not None else base.since
+    cfg.until = corpus.until if corpus.until is not None else base.until
+    cfg.top_n_themes = base.top_n_themes
+    cfg.top_n_quotes = base.top_n_quotes
+    cfg.spike_window_weeks = base.spike_window_weeks
+    cfg.stale_window_weeks = base.stale_window_weeks
+    cfg.merge_contained_phrases = base.merge_contained_phrases
+    cfg.min_cluster_size = corpus.min_cluster_size if corpus.min_cluster_size is not None else base.min_cluster_size
+    cfg.umap_n_neighbors = corpus.umap_n_neighbors if corpus.umap_n_neighbors is not None else base.umap_n_neighbors
+    cfg.tag_weight = corpus.tag_weight if corpus.tag_weight is not None else base.tag_weight
+    cfg.top_n_tags = corpus.top_n_tags if corpus.top_n_tags is not None else base.top_n_tags
+    cfg.tag_weights = corpus.tag_weights if corpus.tag_weights is not None else dict(base.tag_weights)
+    cfg.require_dates = corpus.require_dates if corpus.require_dates is not None else base.require_dates
+    cfg.no_llm = base.no_llm
+    cfg.dry_run = base.dry_run
+    cfg.cache_dir = base.cache_dir
+    cfg.no_cache = base.no_cache
+    cfg.promote = (
+        corpus.promote
+        if corpus.promote is not None
+        else base.promote
+    )
+    cfg.verbose = base.verbose
+    cfg.quiet = base.quiet
+    # Corpora don't nest recursively.
+    return cfg
 
 
 def apply_env_overrides(config: Config) -> None:

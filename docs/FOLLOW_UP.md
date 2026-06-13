@@ -6,12 +6,11 @@ history) on 2026-06-09, plus the gaps surfaced by the 2026-06-10
 T1.1–T1.3 ship + lint cleanup. They are ordered by ROI for the
 current user (the author of the vault) and grouped by effort.
 
-**Current state of the repo** (post-T1.4):
-- 185/185 tests green locally and on CI.
+**Current state of the repo** (post-T2.2):
+- Tier 1 and Tier 2 are fully shipped.
 - Test workflow (`.github/workflows/test.yml`) runs pytest + ruff
   on a 3.11/3.12 × ubuntu/windows matrix; gitleaks workflow
   (`.github/workflows/secret-scan.yml`) runs on every push to main.
-- Tier 1 is fully shipped.
 
 ---
 
@@ -397,24 +396,48 @@ lists the offending paths.
 
 ### T2.2 — Per-folder / per-corpus runs
 
-The user's Reading folder is a fundamentally different kind of
-corpus than the Self folder, and trying to do per-lane work in
-one global view dilutes both.
+> **DONE** (T2.2 implementation). Added a `corpora:` config block
+> and a `tta run-all` subcommand. Each corpus inherits global
+> defaults and can override `input_path`, `output_dir`,
+> `include/exclude`, date filters, clustering knobs, tag weights,
+> and `promote` settings. Output defaults to
+> `{global_output_dir}/{corpus_name}` unless overridden.
+> `run-all` writes markdown+JSON+HTML for each corpus (defaulting
+> to those three when outputs aren't explicitly set) and generates
+> `{global_output_dir}/corpora/index.html` linking to every
+> mini-dashboard. Run snapshots are written per-corpus.
+>
+> Tests: 7 new in `tests/test_t22_run_all.py` (config override
+> inheritance, YAML parsing, index rendering, integration run,
+> CLI wiring). All green.
 
-The right shape is probably: `text-theme-analyzer` as a tool you
-point at *one* focused corpus, with a thin wrapper script that
-runs it on each of `Self/`, `Themes/`, `Daily/`, `projects/`
-separately and renders four mini-dashboards. This gives you
-per-lane "thinking radars" instead of one global view that mixes
-them.
+**How to use it (post-T2.2):**
 
-Implementation: a `corpora` config that maps name → include/exclude
-+ output-dir, and a `tta run-all` subcommand that loops over them
-and emits a `corpora/index.html` that links to each mini-dashboard.
+In `text-theme-analyzer.yml`:
 
-This is the change that would make the most *qualitative*
-difference to day-to-day use. Probably the highest-value single
-feature on this whole list.
+```yaml
+output_dir: ./out
+corpora:
+  self:
+    input_path: ./Self
+  reading:
+    input_path: ./06 Reading
+    output_dir: ./out/reading
+```
+
+Then:
+
+```bash
+tta run-all
+```
+
+This creates `./out/self/dashboard.html`, `./out/reading/dashboard.html`,
+and `./out/corpora/index.html` linking to both.
+
+**File pointers (for future tweaks):**
+- `src/text_theme_analyzer/config.py` (`CorpusConfig`, `_apply_corpus_overrides`, `_load_corpora`)
+- `src/text_theme_analyzer/cli.py` (`run_all` subcommand)
+- `src/text_theme_analyzer/output/run_all.py` (orchestration + index rendering)
 
 ### T2.3 — Persistent cluster names across runs
 

@@ -736,5 +736,66 @@ def _latest_run_dir(output_dir: Path) -> Path | None:
     return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
+@main.command("run-all")
+@click.option("--output-dir", type=Path, default=Path("./text-theme-output"), show_default=True, callback=_record_passed,
+              help="Global output dir. Each corpus lands in a subdir unless it overrides output_dir.")
+@click.option("--config", "config_path", type=Path, default=None)
+@click.option("--no-llm", is_flag=True, help="Skip LLM enrichment for every corpus.", callback=_record_passed)
+@click.option("--no-cache", is_flag=True, callback=_record_passed)
+@click.option("--no-history", is_flag=True, help="Skip writing run snapshots for every corpus.")
+@click.option("--require-dates", is_flag=True, help="Require explicit dates for every corpus.", callback=_record_passed)
+@click.option("-v", "--verbose", is_flag=True, callback=_record_passed)
+@click.option("-q", "--quiet", is_flag=True, callback=_record_passed)
+def run_all(
+    output_dir: Path,
+    config_path: Path | None,
+    no_llm: bool,
+    no_cache: bool,
+    no_history: bool,
+    require_dates: bool,
+    verbose: bool,
+    quiet: bool,
+) -> None:
+    """Run the analyzer on every corpus defined in the config.
+
+    Requires a `corpora:` block in `text-theme-analyzer.yml`. Each corpus
+    inherits global defaults and overrides only the fields it specifies.
+    Generates `corpora/index.html` linking to each mini-dashboard.
+    """
+    logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+    cli_passed: set[str] = click.get_current_context().obj.setdefault("cli_passed", set())
+    config = Config()
+    load_dotenv()
+    yaml_path = config_path or find_config_file()
+    if yaml_path:
+        apply_yaml_overrides(config, load_yaml_config(yaml_path))
+    apply_env_overrides(config)
+
+    if "output_dir" in cli_passed:
+        config.output_dir = output_dir
+    if "no_llm" in cli_passed:
+        config.no_llm = no_llm
+    if "no_cache" in cli_passed:
+        config.no_cache = no_cache
+    if "require_dates" in cli_passed:
+        config.require_dates = require_dates
+    if "verbose" in cli_passed:
+        config.verbose = verbose
+    if "quiet" in cli_passed:
+        config.quiet = quiet
+
+    from text_theme_analyzer.output.run_all import run_all as run_corpora
+
+    results, index_path = run_corpora(config, write_history=not no_history)
+    for name, _analysis, written in results:
+        for _fmt, path in written.items():
+            if path is not None:
+                click.echo(f"[{name}] wrote {path}")
+    click.echo(f"[run-all] index {index_path}")
+
+
 if __name__ == "__main__":
     sys.exit(main())

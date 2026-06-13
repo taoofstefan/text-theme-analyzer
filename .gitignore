@@ -53,3 +53,6 @@ data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Temporary CI status file from monitor
+.tmp_run_status.json
