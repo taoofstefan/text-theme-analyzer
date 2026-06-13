@@ -21,6 +21,7 @@ from text_theme_analyzer.pipeline.model import Analysis, ClusterResult
 from text_theme_analyzer.pipeline.preprocess import preprocess_note
 from text_theme_analyzer.pipeline.timeseries import build_timeseries
 from text_theme_analyzer.pipeline.tone import tone_over_time
+from text_theme_analyzer.utils.dates import has_authoritative_date
 from text_theme_analyzer.utils.progress import log
 
 
@@ -49,6 +50,15 @@ def run(config: Config) -> Analysis:
     )
     notes = _filter_by_date(notes, config.since, config.until)
     log(f"[ingest] loaded {len(notes)} notes", quiet=config.quiet)
+
+    if config.require_dates:
+        undated = [n for n in notes if not has_authoritative_date(n.frontmatter, n.path)]
+        if undated:
+            paths = "\n  ".join(str(n.path) for n in undated)
+            raise ValueError(
+                f"--require-dates is set but {len(undated)} note(s) have no explicit date:\n  {paths}\n"
+                "Add a `date: YYYY-MM-DD` frontmatter line (or a YYYY-MM-DD filename prefix)."
+            )
 
     all_chunks = []
     chunks_by_note: dict[str, list] = {}

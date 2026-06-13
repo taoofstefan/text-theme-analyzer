@@ -359,15 +359,41 @@ requires the yake package.
 
 ### T2.1 — Frontmatter-anchored ingest
 
-The right discipline is: the tool should **require or strongly
-prefer** `date:` in frontmatter, and warn loudly (or fail) when a
-note has no date. This is a one-time content discipline change
-(add `date:` to the older notes) plus a small config change
-(turn the warning into a hard error in the analyzer, or a
-`--require-dates` flag).
+> **DONE** (T2.1 implementation). Added `require_dates: bool` to
+> `Config`, exposed as `--require-dates` on `tta analyze`, and as a
+> `require_dates:` YAML config key. When enabled, the orchestrator
+> raises before clustering if any included note has no explicit date
+> (`date:` / `created:` / `published:` frontmatter, or a `YYYY-MM-DD`
+> filename prefix). File mtime is intentionally *not* considered an
+> authoritative date. Off by default so existing corpora still run.
+>
+> Tests: 7 new in `tests/test_t21_require_dates.py` covering
+> `has_authoritative_date`, config default + YAML override,
+> orchestrator allow/raise behavior, multi-path error listing, and
+> CLI wiring. All green.
 
-Worth bundling with T1.1 since the user's tagging is probably
-correlated with the user's dating.
+**How to use it (post-T2.1):**
+
+In `text-theme-analyzer.yml`:
+
+```yaml
+require_dates: true
+```
+
+Or on the CLI:
+
+```bash
+tta analyze . --require-dates
+```
+
+If any note lacks an explicit date, the run stops immediately and
+lists the offending paths.
+
+**File pointers (for future tweaks):**
+- `src/text_theme_analyzer/config.py` (`require_dates` field + YAML override)
+- `src/text_theme_analyzer/cli.py` (`--require-dates` flag)
+- `src/text_theme_analyzer/pipeline/orchestrator.py` (the date check)
+- `src/text_theme_analyzer/utils/dates.py` (`has_authoritative_date`)
 
 ### T2.2 — Per-folder / per-corpus runs
 

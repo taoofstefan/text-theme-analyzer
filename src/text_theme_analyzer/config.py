@@ -153,6 +153,12 @@ class Config:
     # `tag_weight` is applied. Tags not present in the map default to 1.0.
     tag_weights: dict[str, float] = field(default_factory=dict)
 
+    # T2.1 — Require a resolvable date for every note. When True, the
+    # pipeline raises before clustering if any included note has no
+    # `date:` / `created:` / `published:` frontmatter and no YYYY-MM-DD
+    # prefix in its filename. Off by default so existing corpora still run.
+    require_dates: bool = False
+
     # Behavior
     no_llm: bool = False
     dry_run: bool = False
@@ -224,6 +230,8 @@ def apply_yaml_overrides(config: Config, data: dict[str, Any]) -> None:
         config.top_n_tags = int(data["top_n_tags"])
     if "tag_weights" in data and isinstance(data["tag_weights"], dict):
         config.tag_weights = {str(k): float(v) for k, v in data["tag_weights"].items()}
+    if "require_dates" in data:
+        config.require_dates = bool(data["require_dates"])
     if "dry_run" in data:
         config.dry_run = bool(data["dry_run"])
     if "no_llm" in data:

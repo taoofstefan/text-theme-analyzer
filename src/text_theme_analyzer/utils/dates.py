@@ -72,3 +72,15 @@ def resolve_note_date(
     if d is not None:
         return d
     return date_from_mtime(path)
+
+
+def has_authoritative_date(frontmatter: dict, path: Path) -> bool:
+    """Return True if the note has an explicit date (frontmatter or filename).
+
+    File mtime is intentionally excluded — it's a filesystem fallback, not an
+    authorial date. Used by the --require-dates check (T2.1).
+    """
+    for key in ("date", "created", "published"):
+        if key in frontmatter and coerce_to_date(frontmatter[key]) is not None:
+            return True
+    return date_from_filename(path) is not None

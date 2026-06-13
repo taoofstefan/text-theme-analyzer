@@ -62,6 +62,7 @@ def _build_config(
     tag_weight: float,
     top_n_tags: int,
     tag_weights_json: str | None,
+    require_dates: bool,
     no_llm: bool,
     dry_run: bool,
     cache_dir: Path,
@@ -130,6 +131,8 @@ def _build_config(
     if "tag_weights" in cli_passed and tag_weights_json is not None:
         import json
         config.tag_weights = {str(k): float(v) for k, v in json.loads(tag_weights_json).items()}
+    if "require_dates" in cli_passed:
+        config.require_dates = require_dates
     if "no_llm" in cli_passed:
         config.no_llm = no_llm
     if "dry_run" in cli_passed:
@@ -374,6 +377,8 @@ main.main = _patched_main  # type: ignore[method-assign]
 @click.option("--tag-weights", "tag_weights_json", default=None, callback=_record_passed,
               help="JSON map of tag string to multiplier for per-tag weighting (T1.1b). "
                    "Example: '{\"consulting\":2.0,\"life\":0.5}'. Applied column-wise before --tag-weight.")
+@click.option("--require-dates", is_flag=True, help="Raise if any included note has no resolvable date (T2.1). "
+                   "Default is off; existing corpora continue to run.", callback=_record_passed)
 @click.option("--no-llm", is_flag=True, help="Skip LLM enrichment (M1 default behavior).", callback=_record_passed)
 @click.option("--dry-run", is_flag=True, help="Run ingest + clustering, then print a preview (LLM bundle size estimate) and exit. No LLM call, no output files written.", callback=_record_passed)
 @click.option("--cache-dir", type=Path, default=None, callback=_record_passed)
@@ -401,6 +406,7 @@ def analyze(
     tag_weight: float,
     top_n_tags: int,
     tag_weights_json: str | None,
+    require_dates: bool,
     no_llm: bool,
     dry_run: bool,
     cache_dir: Path | None,
@@ -437,6 +443,7 @@ def analyze(
         tag_weight=tag_weight,
         top_n_tags=top_n_tags,
         tag_weights_json=tag_weights_json,
+        require_dates=require_dates,
         no_llm=no_llm,
         dry_run=dry_run,
         cache_dir=cache_dir or Path.home() / ".cache" / "text-theme-analyzer",
