@@ -55,10 +55,12 @@ def analysis_to_dict(analysis: Analysis) -> dict:
     }
     if analysis.clusters is not None:
         cluster_ids = sorted(int(cid) for cid in analysis.clusters.cluster_keywords.keys())
+        stable = analysis.metadata.get("cluster_stable_names") or {}
         out["clusters"] = {
             "count": len(analysis.clusters.cluster_keywords),
             "outlier_count": int(analysis.clusters.outlier_count),
             "cluster_ids": cluster_ids,
+            "stable_names": {str(cid): name for cid, name in stable.items()},
             "sizes": [
                 {"cluster_id": cid, "size": int(analysis.clusters.cluster_sizes.get(cid, 0))}
                 for cid in cluster_ids

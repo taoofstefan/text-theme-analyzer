@@ -149,6 +149,31 @@ def run(config: Config) -> Analysis:
         quiet=config.quiet,
     )
 
+    # T2.3: persistent cluster names. Load the previous run's catalog and
+    # resolve stable names for current clusters by centroid similarity.
+    from text_theme_analyzer.pipeline.cluster_naming import (
+        build_name_catalog,
+        load_name_catalog,
+        merge_catalogs,
+        resolve_stable_names,
+        save_name_catalog,
+    )
+    old_catalog = load_name_catalog(config.output_dir)
+    stable_names = resolve_stable_names(
+        Analysis(
+            notes=notes, chunks=all_chunks, chunk_note_ids=chunk_note_ids,
+            keywords=keywords, keyphrase_frequency=keyphrase_freq,
+            clusters=clusters, timeseries=None, enrichment=None, metadata={},
+        ),
+        embeddings,
+        old_catalog,
+    )
+    if stable_names:
+        log(
+            f"[names] {len(stable_names)} stable names matched from previous runs",
+            quiet=config.quiet,
+        )
+
     n2c = note_to_cluster(chunk_note_ids, clusters.assignments)
     note_dates = {n.id: n.date for n in notes}
     if n2c:
@@ -237,6 +262,27 @@ def run(config: Config) -> Analysis:
             log(f"[llm] skipped (error): {e}", quiet=config.quiet)
             enrichment = None
 
+    # T2.3: update the name catalog with the latest names and centroids.
+    # Do this after LLM enrichment so LLM names are preferred.
+    final_analysis = Analysis(
+        notes=notes,
+        chunks=all_chunks,
+        chunk_note_ids=chunk_note_ids,
+        keywords=keywords,
+        keyphrase_frequency=keyphrase_freq,
+        clusters=clusters,
+        timeseries=timeseries,
+        enrichment=enrichment,
+        metadata={},
+    )
+    new_catalog = build_name_catalog(final_analysis, embeddings)
+    merged_catalog = merge_catalogs(old_catalog, new_catalog)
+    try:
+        catalog_path = save_name_catalog(config.output_dir, merged_catalog)
+        log(f"[names] saved {len(merged_catalog)} entries to {catalog_path.name}", quiet=config.quiet)
+    except Exception as e:
+        log(f"[names] could not save cluster catalog: {e}", quiet=config.quiet)
+
     metadata: dict[str, Any] = {
         "input_path": str(config.input_path),
         "note_count": len(notes),
@@ -258,6 +304,9 @@ def run(config: Config) -> Analysis:
         dated = [n.date for n in notes if n.date is not None]
         if dated:
             metadata["date_range"] = [min(dated).isoformat(), max(dated).isoformat()]
+
+    # T2.3: attach stable-name map for renderers. Empty when no history match.
+    metadata["cluster_stable_names"] = stable_names
 
     return Analysis(
         notes=notes,

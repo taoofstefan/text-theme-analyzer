@@ -56,6 +56,8 @@ def render_cli(analysis: Analysis, *, top_n_themes: int = 15) -> None:
         themes_table.add_row(str(i), phrase, str(count))
     console.print(themes_table)
 
+    stable_names = analysis.metadata.get("cluster_stable_names") or {}
+
     # Clusters
     if analysis.clusters is not None and analysis.clusters.cluster_keywords:
         console.print("\n[bold]Clusters[/bold]")
@@ -63,6 +65,7 @@ def render_cli(analysis: Analysis, *, top_n_themes: int = 15) -> None:
         cluster_table.add_column("ID", justify="right", style="dim", width=4)
         cluster_table.add_column("Size", justify="right", style="green", width=5)
         cluster_table.add_column("Top keywords", style="cyan")
+        cluster_table.add_column("Stable name")
         cluster_table.add_column("Representative notes")
         for cid in sorted(analysis.clusters.cluster_keywords):
             kws = analysis.clusters.cluster_keywords[cid][:4]
@@ -72,7 +75,8 @@ def render_cli(analysis: Analysis, *, top_n_themes: int = 15) -> None:
             rep_ids = analysis.clusters.cluster_representatives.get(cid, [])
             rep_titles = [note_by_id[i].title for i in rep_ids[:2] if i in note_by_id]
             rep_str = "; ".join(rep_titles) or "—"
-            cluster_table.add_row(str(cid), str(size), kw_str, rep_str)
+            stable = stable_names.get(cid, "—")
+            cluster_table.add_row(str(cid), str(size), kw_str, stable, rep_str)
         console.print(cluster_table)
 
     # Tensions

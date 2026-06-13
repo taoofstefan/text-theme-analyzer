@@ -418,20 +418,35 @@ feature on this whole list.
 
 ### T2.3 — Persistent cluster names across runs
 
-Right now the LLM names clusters fresh each time. If you re-run
-next month, cluster #4 might be a different theme because
-BERTopic doesn't have stable IDs across runs (the cluster IDs are
-arbitrary integers assigned during HDBSCAN fitting).
+> **DONE** (T2.3 implementation). After each run the orchestrator
+> saves a centroid-keyed catalog of cluster names to
+> `{output_dir}/cluster-names.json`. On the next run, each new
+> cluster's centroid is matched against the catalog by cosine
+> similarity; if the best match exceeds 0.85, the old name is
+> reused and surfaced in `metadata["cluster_stable_names"]`.
+> The catalog is keyed by a deterministic hash of the normalized
+> centroid, so renaming a cluster in one run doesn't orphan its
+> history. Names come from LLM enrichment when available, falling
+> back to the top c-TF-IDF keyword pair. Markdown and CLI outputs
+> now show the stable name alongside the keyword label.
+>
+> Tests: 8 new in `tests/test_t23_cluster_naming.py` (catalog
+> building with LLM names and keyword fallback, save/load/merge,
+> similarity matching, stable-name mapping, orchestrator save).
+> All green.
 
-Adding a name-persistence layer would let the time-series and
-multi-run diff actually be comparable:
+**How to use it (post-T2.3):**
 
-- After a run, save `{cluster_id: llm_name, embedding_centroid}`.
-- On the next run, for each new cluster, find the closest old
-  cluster by centroid cosine similarity. If similarity > 0.85,
-  reuse the old name. Otherwise it's a genuinely new cluster.
+Nothing to configure — the catalog is automatic. Re-run the analyzer
+on the same output directory and stable themes will keep their names
+in the markdown report, CLI summary, and `themes.json` (`clusters.stable_names`).
 
-This is what makes T1.3 actually usable.
+**File pointers (for future tweaks):**
+- `src/text_theme_analyzer/pipeline/cluster_naming.py` (catalog build/save/resolve)
+- `src/text_theme_analyzer/pipeline/orchestrator.py` (load/save/attach to metadata)
+- `src/text_theme_analyzer/output/markdown_report.py` (`_cluster_label` uses stable names)
+- `src/text_theme_analyzer/output/cli_summary.py` (stable-name column)
+- `src/text_theme_analyzer/output/json_report.py` (`clusters.stable_names`)
 
 ---
 

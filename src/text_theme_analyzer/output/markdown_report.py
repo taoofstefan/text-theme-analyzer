@@ -12,12 +12,21 @@ def _format_date(d: date | None) -> str:
     return d.isoformat() if d else "—"
 
 
-def _cluster_label(cid: int, keywords: list[tuple[str, float]]) -> str:
-    """Best-effort human label from the top 2-3 c-TF-IDF keywords."""
+def _cluster_label(
+    cid: int,
+    keywords: list[tuple[str, float]],
+    stable_names: dict[int, str] | None = None,
+) -> str:
+    """Best-effort human label: stable name first, then top c-TF-IDF keywords."""
+    stable = (stable_names or {}).get(cid)
     if not keywords:
-        return f"Cluster {cid}"
+        base = f"Cluster {cid}"
+        return f"{base} ({stable})" if stable else base
     top = [w for w, _ in keywords[:3] if w]
-    return f"Cluster {cid}: {', '.join(top) if top else '(no keywords)'}"
+    if not top:
+        return f"Cluster {cid}: (no keywords)"
+    kw_label = f"Cluster {cid}: {', '.join(top)}"
+    return f"{kw_label} ({stable})" if stable else kw_label
 
 
 def render_markdown(analysis: Analysis, *, top_n_themes: int = 15) -> str:
@@ -55,6 +64,8 @@ def render_markdown(analysis: Analysis, *, top_n_themes: int = 15) -> str:
             lines.append(f"| {i} | {phrase} | {count} |")
     lines.append("")
 
+    stable_names = analysis.metadata.get("cluster_stable_names") or {}
+
     # Clusters
     if analysis.clusters is not None and analysis.clusters.cluster_keywords:
         lines.append("## Clusters")
@@ -71,7 +82,7 @@ def render_markdown(analysis: Analysis, *, top_n_themes: int = 15) -> str:
             rep_ids = analysis.clusters.cluster_representatives.get(cid, [])
             rep_titles = [note_by_id[rid].title for rid in rep_ids if rid in note_by_id]
             rep_str = "; ".join(rep_titles[:2]) if rep_titles else "—"
-            lines.append(f"| {_cluster_label(cid, kws)} | {size} | {kw_str} | {rep_str} |")
+            lines.append(f"| {_cluster_label(cid, kws, stable_names)} | {size} | {kw_str} | {rep_str} |")
         lines.append("")
 
     # Themes over time
@@ -83,7 +94,11 @@ def render_markdown(analysis: Analysis, *, top_n_themes: int = 15) -> str:
         lines.append("| Bucket | Cluster | Count | Rolling mean | Δ |")
         lines.append("|---|---|---:|---:|---:|")
         for spike in analysis.timeseries.spikes[:10]:
-            label = _cluster_label(spike.cluster_id, analysis.clusters.cluster_keywords.get(spike.cluster_id, []) if analysis.clusters else [])
+            label = _cluster_label(
+                spike.cluster_id,
+                analysis.clusters.cluster_keywords.get(spike.cluster_id, []) if analysis.clusters else [],
+                stable_names,
+            )
             lines.append(
                 f"| {spike.bucket.isoformat()} | {label} | {spike.count} | "
                 f"{spike.rolling_mean:.1f} | {spike.delta:+.1f} |"
@@ -103,7 +118,11 @@ def render_markdown(analysis: Analysis, *, top_n_themes: int = 15) -> str:
         lines.append("| Cluster | First seen | Last seen | Frequency | Severity | Quiet (buckets) |")
         lines.append("|---|---|---|---:|---|---:|")
         for s in analysis.timeseries.stale:
-            label = _cluster_label(s.cluster_id, analysis.clusters.cluster_keywords.get(s.cluster_id, []) if analysis.clusters else [])
+            label = _cluster_label(
+                s.cluster_id,
+                analysis.clusters.cluster_keywords.get(s.cluster_id, []) if analysis.clusters else [],
+                stable_names,
+            )
             severity = getattr(s, "severity", "medium") or "medium"
             quiet_streak = int(getattr(s, "quiet_streak_buckets", 0) or 0)
             lines.append(
